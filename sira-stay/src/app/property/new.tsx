@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import { Image } from 'expo-image';
 import * as Location from 'expo-location';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useRef, useState, type ReactNode } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import MapView, { Marker, type LatLng } from 'react-native-maps';
@@ -16,6 +16,7 @@ import { Banner } from '@/components/feedback';
 import { TextField } from '@/components/text-field';
 import { TAMIL_NADU_REGION, colors, radius } from '@/constants/theme';
 import { ApiError, api, filePart } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { todayString, fromDateString } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { choosePhotos, imageMime, imageName, takePhoto, type PickedImage } from '@/lib/pick-image';
@@ -44,6 +45,7 @@ const photoKey = (p: PickedImage) => p.assetId || `${p.fileSize ?? 0}:${p.width}
 
 export default function NewListing() {
   const { t, errorText } = useI18n();
+  const { user } = useAuth();
   const { width } = useWindowDimensions();
   const mapRef = useRef<MapView>(null);
   const [step, setStep] = useState(0);
@@ -186,6 +188,9 @@ export default function NewListing() {
       setSubmitting(false);
     }
   }
+
+  // Owners who switched from Tenant mode verify their ID before their first listing.
+  if (user?.kycStatus === 'none') return <Redirect href="/owner/verify" />;
 
   const thumb = (width - 32 - 20) / 3;
 

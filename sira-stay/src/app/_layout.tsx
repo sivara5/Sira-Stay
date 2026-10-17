@@ -47,6 +47,7 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="property/[id]" options={{ title: '' }} />
         <Stack.Screen name="property/new" options={{ title: t('new.title') }} />
+        <Stack.Screen name="owner/verify" options={{ title: t('onb.kycTitle') }} />
         <Stack.Screen name="book/[id]" options={{ title: t('book.title') }} />
         <Stack.Screen name="checkout/[paymentId]" options={{ title: t('pay.title'), gestureEnabled: false }} />
         <Stack.Screen name="booking/[id]/index" options={{ title: t('bookings.detailsTitle') }} />

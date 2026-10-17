@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { Router } from 'express';
 
-import { registrationStep, requireAuth, toMe } from '../auth.js';
+import { markOnboarded, registrationStep, requireAuth, requireRegistered, toMe } from '../auth.js';
 import { config } from '../config.js';
 import { one, run } from '../db.js';
 import { issueOtp, verifyOtp } from '../otp.js';
@@ -64,6 +64,7 @@ authRouter.post('/role', requireAuth, (req, res) => {
     throw new HttpError(409, 'ROLE_LOCKED', 'Your account type is already set.');
   }
   run('UPDATE users SET role = ? WHERE id = ?', role, req.user.id);
+  markOnboarded(req.user.id);
   res.json({ user: reload(req.user.id) });
 });
 
@@ -90,6 +91,7 @@ authRouter.post('/phone/verify', requireAuth, (req, res) => {
   } catch {
     throw new HttpError(409, 'PHONE_TAKEN', 'This mobile number is already linked to another account.');
   }
+  markOnboarded(req.user.id);
   res.json({ user: reload(req.user.id) });
 });
 
@@ -130,6 +132,7 @@ authRouter.post(
       path.basename(stored),
       req.user.id,
     );
+    markOnboarded(req.user.id);
     res.json({ user: reload(req.user.id) });
   }),
 );
@@ -162,5 +165,16 @@ meRouter.patch('/', requireAuth, (req, res) => {
   for (const [column, value] of Object.entries(updates)) {
     run(`UPDATE users SET ${column} = ? WHERE id = ?`, value, req.user.id);
   }
+  res.json({ user: reload(req.user.id) });
+});
+
+/**
+ * Switches the active role on the same account (Tenant ⇄ Owner). No new account and no KYC
+ * are needed to switch — an owner's ID KYC is requested when they start listing a property.
+ */
+meRouter.post('/role', requireRegistered, (req, res) => {
+  const role = req.body?.role;
+  if (!['tenant', 'owner'].includes(role)) throw new HttpError(400, 'VALIDATION', 'Choose Tenant or Owner.');
+  run('UPDATE users SET role = ?, onboarded = 1 WHERE id = ?', role, req.user.id);
   res.json({ user: reload(req.user.id) });
 });

@@ -1,12 +1,21 @@
-import { one } from './db.js';
+import { one, run } from './db.js';
 import { HttpError, sha256 } from './util.js';
 
-/** Registration progress: email → role → phone OTP → (owners only) KYC. */
+/**
+ * Registration progress: email → role → phone OTP → (owners only) KYC.
+ * Once finished it stays done, even if the user later switches their active role.
+ */
 export function registrationStep(user) {
+  if (user.onboarded) return 'done';
   if (!user.role) return 'role';
   if (!user.phone_verified) return 'phone';
   if (user.role === 'owner' && user.kyc_status === 'none') return 'kyc';
   return 'done';
+}
+
+export function markOnboarded(userId) {
+  const user = one('SELECT * FROM users WHERE id = ?', userId);
+  if (user && !user.onboarded && registrationStep(user) === 'done') run('UPDATE users SET onboarded = 1 WHERE id = ?', userId);
 }
 
 export function toMe(user) {

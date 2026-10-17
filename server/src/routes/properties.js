@@ -71,9 +71,18 @@ propertiesRouter.get('/:id', (req, res) => {
   res.json({ property: toDetail(getPropertyOr404(req.params.id), req.user) });
 });
 
+/** Owners who switched from Tenant verify their identity when they start listing. */
+function requireOwnerKyc(req, _res, next) {
+  if (req.user.kyc_status === 'none') {
+    throw new HttpError(403, 'KYC_REQUIRED', 'Verify your identity (KYC) before listing a property.');
+  }
+  next();
+}
+
 propertiesRouter.post(
   '/',
   requireOwner,
+  requireOwnerKyc,
   upload.fields([
     { name: 'photos', maxCount: MAX_PHOTOS },
     { name: 'document', maxCount: 1 },

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   kyc_id_last4 TEXT,
   kyc_id_enc TEXT,                              -- encrypted full ID number
   kyc_file TEXT,
+  onboarded INTEGER NOT NULL DEFAULT 0,         -- registration finished; role can then be switched freely
   created_at TEXT NOT NULL
 );
 
@@ -143,6 +144,13 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS messages_thread ON messages(property_id, tenant_id, created_at);
 `);
+
+// Migration for databases created before Tenant ⇄ Owner switching existed.
+if (!db.prepare("SELECT 1 AS ok FROM pragma_table_info('users') WHERE name = 'onboarded'").get()) {
+  db.exec('ALTER TABLE users ADD COLUMN onboarded INTEGER NOT NULL DEFAULT 0');
+}
+db.exec(`UPDATE users SET onboarded = 1
+          WHERE onboarded = 0 AND role IS NOT NULL AND phone_verified = 1 AND (role = 'tenant' OR kyc_status <> 'none')`);
 
 const statements = new Map();
 function stmt(sql) {
