@@ -9,6 +9,8 @@ import { ApproxMap } from '@/components/approx-map';
 import { Button } from '@/components/button';
 import { categoryIcon } from '@/components/category-tabs';
 import { Banner, ErrorView, Loading } from '@/components/feedback';
+import { FavoriteButton } from '@/components/favorite-button';
+import { RatingBadge } from '@/components/rating';
 import { StatusBadge } from '@/components/status-badge';
 import { colors, radius } from '@/constants/theme';
 import { ApiError, api, mediaUrl } from '@/lib/api';
@@ -77,7 +79,14 @@ export default function PropertyScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <PhotoCarousel photos={p.photos} />
+        <View>
+          <PhotoCarousel photos={p.photos} />
+          {!p.isOwner && (
+            <View style={styles.favorite}>
+              <FavoriteButton propertyId={p.id} favorite={p.favorite} />
+            </View>
+          )}
+        </View>
 
         <View style={styles.section}>
           <View style={styles.badges}>
@@ -89,6 +98,7 @@ export default function PropertyScreen() {
             {p.verified && <VerifiedTag label={t('card.verified')} />}
           </View>
           <Text style={styles.title}>{p.title}</Text>
+          <RatingBadge rating={p.rating} large />
           <View style={styles.line}>
             <Ionicons name="location-outline" size={16} color={colors.textMuted} />
             <Text style={styles.muted}>
@@ -276,17 +286,23 @@ function PhotoCarousel({ photos }: { photos: PropertyDetail['photos'] }) {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         keyExtractor={(photo) => photo.id}
+        getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+        initialNumToRender={2}
+        windowSize={3}
         onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
         renderItem={({ item }) => (
           <Image source={{ uri: mediaUrl(item.url) }} style={{ width, height: width * 0.7 }} contentFit="cover" transition={150} />
         )}
       />
       {photos[index] && (
-        <View style={styles.photoMeta}>
-          <Text style={styles.photoMetaText}>
-            {t(`photo.${photos[index].kind}`)} · {t('prop.photoOf', { n: index + 1, total: photos.length })}
-          </Text>
-        </View>
+        <>
+          <View style={[styles.photoMeta, styles.photoKind]}>
+            <Text style={styles.photoMetaText}>{t(`photo.${photos[index].kind}`)}</Text>
+          </View>
+          <View style={[styles.photoMeta, styles.photoCounter]} accessibilityLabel={`Photo ${index + 1} of ${photos.length}`}>
+            <Text style={styles.photoCounterText}>{t('prop.photoOf', { n: index + 1, total: photos.length })}</Text>
+          </View>
+        </>
       )}
     </View>
   );
@@ -362,13 +378,16 @@ const styles = StyleSheet.create({
   photoMeta: {
     position: 'absolute',
     bottom: 12,
-    right: 12,
     backgroundColor: colors.overlay,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: radius.pill,
   },
+  photoKind: { left: 12 },
+  photoCounter: { right: 12, paddingHorizontal: 12 },
   photoMetaText: { color: colors.white, fontSize: 12, fontWeight: '600' },
+  photoCounterText: { color: colors.white, fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
+  favorite: { position: 'absolute', top: 12, right: 12 },
   bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',

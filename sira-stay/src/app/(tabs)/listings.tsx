@@ -100,7 +100,19 @@ function ListingCard({ listing: p, onChanged }: { listing: OwnerListing; onChang
         )}
       </View>
 
-      {p.status !== 'WITHDRAWN' && <Button title={t('listings.withdraw')} variant="danger" icon="archive-outline" small onPress={withdraw} />}
+      {p.status !== 'WITHDRAWN' && (
+        <View style={styles.actions}>
+          <Button
+            title={t('photos.manage')}
+            variant="secondary"
+            icon="images-outline"
+            small
+            style={styles.flex}
+            onPress={() => router.push(`/listing/${p.id}/photos`)}
+          />
+          <Button title={t('listings.withdraw')} variant="danger" icon="archive-outline" small style={styles.flex} onPress={withdraw} />
+        </View>
+      )}
     </View>
   );
 }
@@ -124,4 +136,6 @@ const styles = StyleSheet.create({
   tenant: { fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 },
   phone: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   phoneText: { fontSize: 14, color: colors.primary, fontWeight: '600' },
+  actions: { flexDirection: 'row', gap: 10 },
+  flex: { flex: 1 },
 });

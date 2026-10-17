@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { requireOwner, requireRegistered } from '../auth.js';
 import { config } from '../config.js';
 import { all, one, run, tx } from '../db.js';
+import { canonicalDistrict, districtSpellings } from '../districts.js';
 import { approximate, isInIndia } from '../geo.js';
 import {
   CATEGORIES,
@@ -38,9 +39,66 @@ function parseList(value, field) {
   throw new HttpError(400, 'VALIDATION', `${field} is malformed.`, { field });
 }
 
+const placeholders = (list) => list.map(() => '?').join(', ');
+
+/** Validates the interior/exterior label sent for each uploaded photo. */
+function photoKinds(value, count) {
+  const kinds = parseList(value, 'photos');
+  if (kinds.length !== count || kinds.some((k) => !['interior', 'exterior'].includes(k))) {
+    throw new HttpError(400, 'VALIDATION', 'Mark every photo as interior or exterior.', { field: 'photos' });
+  }
+  return kinds;
+}
+
+/** Rejects tiny/blurry files and duplicates (within the upload and against `existingHashes`). */
+function checkPhotos(photos, existingHashes = new Set()) {
+  const hashes = new Set(existingHashes);
+  photos.forEach((photo, index) => {
+    if (photo.size < MIN_PHOTO_BYTES) {
+      throw new HttpError(400, 'PHOTO_LOW_QUALITY', `Photo ${index + 1} is too small or blurry. Use a clear, full-size photo.`, {
+        field: 'photos',
+        index,
+      });
+    }
+    const hash = sha256(fs.readFileSync(photo.path));
+    if (hashes.has(hash)) {
+      throw new HttpError(400, 'PHOTO_DUPLICATE', `Photo ${index + 1} is a duplicate. Each photo must show a different view.`, {
+        field: 'photos',
+        index,
+      });
+    }
+    hashes.add(hash);
+    photo.sha256 = hash;
+  });
+}
+
+/** Moves checked uploads into the property's public photo folder. */
+function storePhotoFiles(propertyId, photos, kinds, startPosition) {
+  const photoDir = path.join(config.uploadDir, 'photos', propertyId);
+  return photos.map((photo, i) => {
+    const name = `${String(startPosition + i + 1).padStart(2, '0')}-${photo.sha256.slice(0, 10)}`;
+    const dest = moveUpload(photo, photoDir, name, ['image']);
+    return { url: `/uploads/photos/${propertyId}/${path.basename(dest)}`, kind: kinds[i], sha256: photo.sha256 };
+  });
+}
+
+function insertPhotos(propertyId, stored, startPosition = 0) {
+  stored.forEach((p, i) =>
+    run(
+      'INSERT INTO photos (id, property_id, url, kind, sha256, position) VALUES (?, ?, ?, ?, ?, ?)',
+      newId(),
+      propertyId,
+      p.url,
+      p.kind,
+      p.sha256,
+      startPosition + i,
+    ),
+  );
+}
+
 propertiesRouter.get('/', (req, res) => {
   expireStaleHolds();
-  const { category, q, sort = 'recent' } = req.query;
+  const { category, district, q, sort = 'recent' } = req.query;
   if (category && !CATEGORIES.includes(category)) throw new HttpError(400, 'VALIDATION', 'Unknown category.');
 
   const lat = Number(req.query.lat);
@@ -53,10 +111,19 @@ propertiesRouter.get('/', (req, res) => {
     where.push('category = ?');
     params.push(category);
   }
+  if (typeof district === 'string' && district.trim()) {
+    const spellings = districtSpellings(district);
+    where.push(`lower(district) IN (${placeholders(spellings)})`);
+    params.push(...spellings);
+  }
+  // Free-text search: district/city, area/locality, landmark or title. District aliases count too ("Trichy").
   if (typeof q === 'string' && q.trim()) {
-    where.push('(title LIKE ? OR area LIKE ? OR district LIKE ? OR landmark LIKE ?)');
-    const like = `%${q.trim().slice(0, 60)}%`;
-    params.push(like, like, like, like);
+    const text = q.trim().slice(0, 60);
+    const like = `%${text}%`;
+    const spellings = canonicalDistrict(text) ? districtSpellings(text) : [];
+    const districtClause = spellings.length ? ` OR lower(district) IN (${placeholders(spellings)})` : '';
+    where.push(`(title LIKE ? OR area LIKE ? OR district LIKE ? OR landmark LIKE ?${districtClause})`);
+    params.push(like, like, like, like, ...spellings);
   }
   const order = { rent_asc: 'rent ASC', rent_desc: 'rent DESC' }[sort] ?? 'created_at DESC';
   const rows = all(`SELECT * FROM properties WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT 200`, ...params);
@@ -115,31 +182,11 @@ propertiesRouter.post(
     if (photos.length < MIN_PHOTOS || photos.length > MAX_PHOTOS) {
       throw new HttpError(400, 'PHOTO_COUNT', `Upload minimum ${MIN_PHOTOS} and maximum ${MAX_PHOTOS} photos.`, { field: 'photos' });
     }
-    const kinds = parseList(b.photoKinds, 'photos');
-    if (kinds.length !== photos.length || kinds.some((k) => !['interior', 'exterior'].includes(k))) {
-      throw new HttpError(400, 'VALIDATION', 'Mark every photo as interior or exterior.', { field: 'photos' });
-    }
+    const kinds = photoKinds(b.photoKinds, photos.length);
     if (!kinds.includes('interior') || !kinds.includes('exterior')) {
       throw new HttpError(400, 'PHOTO_MIX', 'Add at least one interior and one exterior photo.', { field: 'photos' });
     }
-    const hashes = new Set();
-    photos.forEach((photo, index) => {
-      if (photo.size < MIN_PHOTO_BYTES) {
-        throw new HttpError(400, 'PHOTO_LOW_QUALITY', `Photo ${index + 1} is too small or blurry. Use a clear, full-size photo.`, {
-          field: 'photos',
-          index,
-        });
-      }
-      const hash = sha256(fs.readFileSync(photo.path));
-      if (hashes.has(hash)) {
-        throw new HttpError(400, 'PHOTO_DUPLICATE', `Photo ${index + 1} is a duplicate. Each photo must show a different view.`, {
-          field: 'photos',
-          index,
-        });
-      }
-      hashes.add(hash);
-      photo.sha256 = hash;
-    });
+    checkPhotos(photos);
 
     // Ownership document — requested only now, when listing.
     const docType = b.docType;
@@ -151,11 +198,7 @@ propertiesRouter.post(
     const id = newId();
     const approx = approximate(lat, lng, id);
     const docPath = moveUpload(document, path.join(config.privateDir, 'documents'), `${id}-${docType}`, ['image', 'pdf']);
-    const photoDir = path.join(config.uploadDir, 'photos', id);
-    const stored = photos.map((photo, i) => {
-      const dest = moveUpload(photo, photoDir, `${String(i + 1).padStart(2, '0')}-${photo.sha256.slice(0, 10)}`, ['image']);
-      return { url: `/uploads/photos/${id}/${path.basename(dest)}`, kind: kinds[i], sha256: photo.sha256 };
-    });
+    const stored = storePhotoFiles(id, photos, kinds, 0);
 
     tx(() => {
       run(
@@ -185,13 +228,107 @@ propertiesRouter.post(
         availableFrom,
         nowIso(),
       );
-      stored.forEach((p, position) =>
-        run('INSERT INTO photos (id, property_id, url, kind, sha256, position) VALUES (?, ?, ?, ?, ?, ?)', newId(), id, p.url, p.kind, p.sha256, position),
-      );
+      insertPhotos(id, stored);
     });
     res.status(201).json({ property: toDetail(getPropertyOr404(id), req.user) });
   }),
 );
+
+// ---------------------------------------------------------------- owner photo management
+
+function ownProperty(req) {
+  const property = getPropertyOr404(req.params.id);
+  if (property.owner_id !== req.user.id) throw new HttpError(403, 'FORBIDDEN', 'You can only manage your own listings.');
+  return property;
+}
+
+const listPhotos = (propertyId) => all('SELECT id, url, kind FROM photos WHERE property_id = ? ORDER BY position', propertyId);
+
+/** Adds photos to an existing listing (up to 20 in total), linked to that property. */
+propertiesRouter.post(
+  '/:id/photos',
+  requireOwner,
+  upload.array('photos', MAX_PHOTOS),
+  withUploadCleanup((req, res) => {
+    const property = ownProperty(req);
+    const photos = req.files ?? [];
+    const existing = all('SELECT sha256, position FROM photos WHERE property_id = ?', property.id);
+    if (photos.length === 0) throw new HttpError(400, 'PHOTO_COUNT', 'Choose at least one photo to add.', { field: 'photos' });
+    if (existing.length + photos.length > MAX_PHOTOS) {
+      throw new HttpError(
+        400,
+        'PHOTO_COUNT',
+        `A property can have at most ${MAX_PHOTOS} photos. You can add ${MAX_PHOTOS - existing.length} more.`,
+        { field: 'photos' },
+      );
+    }
+    const kinds = photoKinds(req.body?.photoKinds, photos.length);
+    checkPhotos(photos, new Set(existing.map((p) => p.sha256).filter(Boolean)));
+
+    const start = existing.reduce((max, p) => Math.max(max, p.position + 1), 0);
+    const stored = storePhotoFiles(property.id, photos, kinds, start);
+    tx(() => insertPhotos(property.id, stored, start));
+    res.status(201).json({ photos: listPhotos(property.id) });
+  }),
+);
+
+/** Removes a photo, keeping at least 3 with both an interior and an exterior view. */
+propertiesRouter.delete('/:id/photos/:photoId', requireOwner, (req, res) => {
+  const property = ownProperty(req);
+  const photos = all('SELECT id, url, kind FROM photos WHERE property_id = ? ORDER BY position', property.id);
+  const target = photos.find((p) => p.id === req.params.photoId);
+  if (!target) throw new HttpError(404, 'NOT_FOUND', 'Photo not found.');
+  const remaining = photos.filter((p) => p.id !== target.id);
+  if (remaining.length < MIN_PHOTOS) {
+    throw new HttpError(400, 'PHOTO_COUNT', `Keep at least ${MIN_PHOTOS} photos on a listing.`, { field: 'photos' });
+  }
+  if (!remaining.some((p) => p.kind === 'interior') || !remaining.some((p) => p.kind === 'exterior')) {
+    throw new HttpError(400, 'PHOTO_MIX', 'Keep at least one interior and one exterior photo.', { field: 'photos' });
+  }
+  tx(() => {
+    run('DELETE FROM photos WHERE id = ?', target.id);
+    remaining.forEach((p, position) => run('UPDATE photos SET position = ? WHERE id = ?', position, p.id));
+  });
+  if (target.url.startsWith('/uploads/')) {
+    fs.rm(path.join(config.uploadDir, target.url.slice('/uploads/'.length)), { force: true }, () => {});
+  }
+  res.json({ photos: listPhotos(property.id) });
+});
+
+/** Makes a photo the main (cover) photo shown on property cards. */
+propertiesRouter.post('/:id/photos/:photoId/main', requireOwner, (req, res) => {
+  const property = ownProperty(req);
+  const photos = listPhotos(property.id);
+  const target = photos.find((p) => p.id === req.params.photoId);
+  if (!target) throw new HttpError(404, 'NOT_FOUND', 'Photo not found.');
+  const ordered = [target, ...photos.filter((p) => p.id !== target.id)];
+  tx(() => ordered.forEach((p, position) => run('UPDATE photos SET position = ? WHERE id = ?', position, p.id)));
+  res.json({ photos: listPhotos(property.id) });
+});
+
+// ---------------------------------------------------------------- favorites
+
+propertiesRouter.put('/:id/favorite', requireRegistered, (req, res) => {
+  const property = getPropertyOr404(req.params.id);
+  run('INSERT OR IGNORE INTO favorites (user_id, property_id, created_at) VALUES (?, ?, ?)', req.user.id, property.id, nowIso());
+  res.json({ favorite: true });
+});
+
+propertiesRouter.delete('/:id/favorite', requireRegistered, (req, res) => {
+  run('DELETE FROM favorites WHERE user_id = ? AND property_id = ?', req.user.id, req.params.id);
+  res.json({ favorite: false });
+});
+
+export const myFavoritesRouter = Router();
+
+myFavoritesRouter.get('/', requireRegistered, (req, res) => {
+  expireStaleHolds();
+  const rows = all(
+    'SELECT p.* FROM favorites f JOIN properties p ON p.id = f.property_id WHERE f.user_id = ? ORDER BY f.created_at DESC',
+    req.user.id,
+  );
+  res.json({ properties: rows.map((p) => toCard(p, { user: req.user })) });
+});
 
 /** Owner withdraws a listing: future bookings are refunded automatically; ₹9 unlocks become refundable. */
 propertiesRouter.post('/:id/withdraw', requireOwner, async (req, res) => {

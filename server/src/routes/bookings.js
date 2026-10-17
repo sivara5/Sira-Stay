@@ -46,6 +46,7 @@ function toBooking(b, user, { withContact = false } = {}) {
       status: card.status,
     },
     payment: payment && { id: payment.id, status: payment.status, refundStatus: payment.refund_status },
+    myReview: one('SELECT rating, comment FROM reviews WHERE booking_id = ?', b.id) ?? null,
   };
   // A confirmed booking entitles the tenant to the owner's contact and the exact location (for "Open Map").
   if (withContact && b.status === 'CONFIRMED' && hasContactAccess(user, property)) {
@@ -114,6 +115,32 @@ bookingsRouter.get('/:id', requireRegistered, (req, res) => {
   expireStaleHolds();
   const booking = one('SELECT * FROM bookings WHERE id = ? AND user_id = ?', req.params.id, req.user.id);
   if (!booking) throw new HttpError(404, 'NOT_FOUND', 'Booking not found.');
+  res.json({ booking: toBooking(booking, req.user, { withContact: true }) });
+});
+
+/** Tenants rate a property (1–5★) from their own confirmed booking; rating again updates it. */
+bookingsRouter.post('/:id/review', requireRegistered, (req, res) => {
+  const booking = one('SELECT * FROM bookings WHERE id = ? AND user_id = ?', req.params.id, req.user.id);
+  if (!booking) throw new HttpError(404, 'NOT_FOUND', 'Booking not found.');
+  if (booking.status !== 'CONFIRMED') {
+    throw new HttpError(400, 'REVIEW_NOT_ALLOWED', 'You can rate a property after your booking is confirmed.');
+  }
+  const rating = Number(req.body?.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    throw new HttpError(400, 'VALIDATION', 'Choose a rating from 1 to 5 stars.', { field: 'rating' });
+  }
+  const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim().slice(0, 500) || null : null;
+  run(
+    `INSERT INTO reviews (id, property_id, booking_id, user_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(booking_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment, created_at = excluded.created_at`,
+    newId(),
+    booking.property_id,
+    booking.id,
+    req.user.id,
+    rating,
+    comment,
+    nowIso(),
+  );
   res.json({ booking: toBooking(booking, req.user, { withContact: true }) });
 });
 

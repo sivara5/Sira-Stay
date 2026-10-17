@@ -1,0 +1,58 @@
+import { useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+
+import { Button } from '@/components/button';
+import { Banner } from '@/components/feedback';
+import { StarInput } from '@/components/rating';
+import { TextField } from '@/components/text-field';
+import { colors, radius } from '@/constants/theme';
+import { api } from '@/lib/api';
+import { useI18n } from '@/lib/i18n';
+import type { Booking } from '@/lib/types';
+
+/** "Rate your stay" for a confirmed booking. Rating again updates the earlier rating. */
+export function ReviewCard({ booking, onSaved }: { booking: Booking; onSaved: (booking: Booking) => void }) {
+  const { t, errorText } = useI18n();
+  const [stars, setStars] = useState(booking.myReview?.rating ?? 0);
+  const [comment, setComment] = useState(booking.myReview?.comment ?? '');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
+
+  async function submit() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await api<{ booking: Booking }>(`/bookings/${booking.id}/review`, { body: { rating: stars, comment } });
+      onSaved(res.booking);
+      setMessage({ tone: 'success', text: t('review.thanks') });
+    } catch (err) {
+      setMessage({ tone: 'danger', text: errorText(err) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.title}>{t('review.title')}</Text>
+      <Text style={styles.hint}>{t('review.hint')}</Text>
+      <StarInput value={stars} onChange={setStars} />
+      <TextField label={t('review.comment')} value={comment} onChangeText={setComment} multiline maxLength={500} />
+      {message && <Banner tone={message.tone}>{message.text}</Banner>}
+      <Button
+        title={booking.myReview ? t('review.update') : t('review.submit')}
+        icon="star"
+        variant="secondary"
+        onPress={submit}
+        loading={saving}
+        disabled={stars === 0}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 16, gap: 10 },
+  title: { fontSize: 17, fontWeight: '800', color: colors.text },
+  hint: { fontSize: 13, color: colors.textMuted },
+});

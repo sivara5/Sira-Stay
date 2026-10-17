@@ -4,7 +4,8 @@ import { APPROX_RADIUS_M, haversineKm, publicDistanceKm } from './geo.js';
 import { refundProviderPayment } from './payment-provider.js';
 import { HttpError, decryptJson, nowIso, todayIST } from './util.js';
 
-export const CATEGORIES = ['rooms', 'villas', 'pg', 'house', 'room_sharing'];
+// Display order: Homes, Apartments, Villas, PG, Room Sharing ("house" is shown as Homes).
+export const CATEGORIES = ['house', 'apartments', 'villas', 'pg', 'room_sharing'];
 
 // ---------------------------------------------------------------- bookings
 
@@ -59,10 +60,18 @@ export function propertyStatus(property) {
   return next ? { status: 'BOOKED', bookedFrom: next.moveInDate, bookedUntil: next.endDate } : { status: 'AVAILABLE' };
 }
 
+export function propertyRating(propertyId) {
+  const r = one('SELECT AVG(rating) AS average, COUNT(*) AS count FROM reviews WHERE property_id = ?', propertyId);
+  return { average: r.count ? Math.round(r.average * 10) / 10 : null, count: r.count };
+}
+
 /** Public card. Never includes the street address, exact coordinates or owner contact. */
 export function toCard(property, { user, origin } = {}) {
   const cover = one('SELECT url FROM photos WHERE property_id = ? ORDER BY position LIMIT 1', property.id);
   const { n: photoCount } = one('SELECT COUNT(*) AS n FROM photos WHERE property_id = ?', property.id);
+  const favorite = user
+    ? Boolean(one('SELECT 1 AS ok FROM favorites WHERE user_id = ? AND property_id = ?', user.id, property.id))
+    : false;
   const card = {
     id: property.id,
     category: property.category,
@@ -82,6 +91,8 @@ export function toCard(property, { user, origin } = {}) {
     createdAt: property.created_at,
     isOwner: user?.id === property.owner_id,
     unlocked: hasContactAccess(user, property),
+    favorite,
+    rating: propertyRating(property.id),
     ...propertyStatus(property),
   };
   if (origin) card.distanceKm = publicDistanceKm(haversineKm(origin, exactLocation(property)));

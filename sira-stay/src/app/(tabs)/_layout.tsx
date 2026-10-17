@@ -5,6 +5,7 @@ import { colors } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 
+/** Home · Explore · Bookings (Tenant) / Listings (Owner) · Favorites · Profile */
 export default function TabLayout() {
   const { t } = useI18n();
   const { user } = useAuth();
@@ -23,15 +24,24 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: t('explore.title'),
+          title: t('tab.home'),
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="search" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: t('tab.explore'),
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Ionicons name="compass-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="bookings"
         options={{
-          title: t('bookings.title'),
+          title: t('tab.bookings'),
+          headerTitle: t('bookings.title'),
           href: isOwner ? null : undefined,
           tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} />,
         }}
@@ -39,16 +49,17 @@ export default function TabLayout() {
       <Tabs.Screen
         name="listings"
         options={{
-          title: t('listings.title'),
+          title: t('tab.listings'),
+          headerTitle: t('listings.title'),
           href: isOwner ? undefined : null,
-          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="key-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="messages"
+        name="favorites"
         options={{
-          title: t('messages.title'),
-          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles-outline" color={color} size={size} />,
+          title: t('tab.favorites'),
+          tabBarIcon: ({ color, size }) => <Ionicons name="heart-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen

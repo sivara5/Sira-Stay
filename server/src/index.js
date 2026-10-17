@@ -9,7 +9,7 @@ import { authRouter, meRouter } from './routes/auth.js';
 import { bookingsRouter, myBookingsRouter } from './routes/bookings.js';
 import { conversationsRouter } from './routes/messages.js';
 import { myPaymentsRouter, paymentsRouter, webhookRouter } from './routes/payments.js';
-import { MAX_PHOTOS, myPropertiesRouter, propertiesRouter } from './routes/properties.js';
+import { MAX_PHOTOS, myFavoritesRouter, myPropertiesRouter, propertiesRouter } from './routes/properties.js';
 import { seedDemoData } from './seed.js';
 import { HttpError } from './util.js';
 
@@ -45,6 +45,7 @@ app.use('/auth', authRouter);
 app.use('/me', meRouter);
 app.use('/properties', propertiesRouter);
 app.use('/my/properties', myPropertiesRouter);
+app.use('/my/favorites', myFavoritesRouter);
 app.use('/bookings', bookingsRouter);
 app.use('/my/bookings', myBookingsRouter);
 app.use('/payments', paymentsRouter);

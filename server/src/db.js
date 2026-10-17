@@ -143,6 +143,24 @@ CREATE TABLE IF NOT EXISTS messages (
   read_by_owner INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS messages_thread ON messages(property_id, tenant_id, created_at);
+
+CREATE TABLE IF NOT EXISTS favorites (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, property_id)
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id TEXT PRIMARY KEY,
+  property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+  booking_id TEXT NOT NULL UNIQUE REFERENCES bookings(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reviews_property ON reviews(property_id);
 `);
 
 // Migration for databases created before Tenant ⇄ Owner switching existed.
@@ -151,6 +169,9 @@ if (!db.prepare("SELECT 1 AS ok FROM pragma_table_info('users') WHERE name = 'on
 }
 db.exec(`UPDATE users SET onboarded = 1
           WHERE onboarded = 0 AND role IS NOT NULL AND phone_verified = 1 AND (role = 'tenant' OR kyc_status <> 'none')`);
+
+// Categories are now Homes, Apartments, Villas, PG, Room Sharing — the old "Rooms" category folds into Room Sharing.
+db.exec("UPDATE properties SET category = 'room_sharing' WHERE category = 'rooms'");
 
 const statements = new Map();
 function stmt(sql) {

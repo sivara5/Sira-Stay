@@ -45,16 +45,16 @@ const E = {
 
 const LISTINGS = [
   {
-    owner: 0, category: 'rooms', title: 'Furnished single room near Tower Park',
-    description: 'Bright, well-ventilated room with attached bathroom on the first floor. Quiet street, 5 minutes walk to Anna Nagar Tower Park and bus stop.',
+    owner: 0, category: 'apartments', title: 'Furnished 1BHK apartment near Tower Park',
+    description: 'Bright, well-ventilated first-floor apartment with attached bathroom. Quiet street, 5 minutes walk to Anna Nagar Tower Park and bus stop.',
     rent: 9000, deposit: 30000, booking: 2000, furnishing: 'furnished', amenities: ['wifi', 'power_backup', 'water_24x7'],
     district: 'Chennai', area: 'Anna Nagar', landmark: 'Anna Nagar Tower Park',
     address: '12, 3rd Street, AE Block, Anna Nagar West, Chennai 600040', lat: 13.0878, lng: 80.2101,
     photos: [['interior', I.bedroom], ['interior', I.interior], ['exterior', E.house3]],
   },
   {
-    owner: 1, category: 'rooms', title: 'Spacious room with attached bath, Gandhipuram',
-    description: 'Large room for a single working professional or student. Separate entrance, 24x7 water supply.',
+    owner: 1, category: 'apartments', title: '2BHK apartment with balcony, Gandhipuram',
+    description: 'Spacious apartment for a small family or working professionals. Separate entrance, 24x7 water supply.',
     rent: 6500, deposit: 20000, booking: 1500, furnishing: 'semi_furnished', amenities: ['water_24x7', 'parking'],
     district: 'Coimbatore', area: 'Gandhipuram', landmark: 'Gandhipuram Town Bus Stand',
     address: '45, Cross Cut Road, Gandhipuram, Coimbatore 641012', lat: 11.0168, lng: 76.9674,
@@ -133,8 +133,8 @@ const LISTINGS = [
     photos: [['exterior', E.house5], ['interior', I.living2], ['interior', I.kitchen]],
   },
   {
-    owner: 0, category: 'rooms', title: 'Room near Trichy Central Bus Stand',
-    description: 'Neat room for a single occupant. Restaurants and ATMs nearby.',
+    owner: 0, category: 'room_sharing', title: 'Twin sharing room near Central Bus Stand',
+    description: 'Neat twin sharing room for students and working professionals. Restaurants and ATMs nearby.',
     rent: 5000, deposit: 15000, booking: 1000, furnishing: 'semi_furnished', amenities: ['wifi', 'water_24x7'],
     district: 'Tiruchirappalli', area: 'Cantonment', landmark: 'Central Bus Stand',
     address: '5, Williams Road, Cantonment, Tiruchirappalli 620001', lat: 10.7996, lng: 78.6845,

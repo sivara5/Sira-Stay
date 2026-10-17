@@ -6,6 +6,7 @@ import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } fr
 import { Button } from '@/components/button';
 import { DetailRow as Row } from '@/components/detail-row';
 import { Banner, ErrorView, Loading } from '@/components/feedback';
+import { ReviewCard } from '@/components/review-card';
 import { StatusBadge } from '@/components/status-badge';
 import { colors, radius } from '@/constants/theme';
 import { api, mediaUrl } from '@/lib/api';
@@ -17,7 +18,7 @@ import { useQuery } from '@/lib/use-query';
 export default function BookingDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, lang, errorText } = useI18n();
-  const { data, error, loading, refreshing, refresh, reload } = useQuery<{ booking: Booking }>(`/bookings/${id}`);
+  const { data, error, loading, refreshing, refresh, reload, setData } = useQuery<{ booking: Booking }>(`/bookings/${id}`);
   const [paying, setPaying] = useState(false);
 
   if (loading && !data) return <Loading />;
@@ -90,6 +91,8 @@ export default function BookingDetails() {
           </View>
         </View>
       )}
+
+      {b.status === 'CONFIRMED' && <ReviewCard booking={b} onSaved={(booking) => setData({ booking })} />}
 
       <View style={styles.actions}>
         {b.status === 'CONFIRMED' && (

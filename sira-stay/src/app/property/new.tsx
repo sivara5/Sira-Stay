@@ -19,18 +19,16 @@ import { ApiError, api, filePart } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { todayString, fromDateString } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
+import { MAX_PHOTOS, MIN_PHOTOS, filterPicked, photoKey, type PhotoKind } from '@/lib/photo-rules';
 import { choosePhotos, imageMime, imageName, takePhoto, type PickedImage } from '@/lib/pick-image';
 import type { StringKey } from '@/lib/strings';
 import { AMENITIES, CATEGORIES, type Amenity, type Category, type Furnishing, type PropertyDetail } from '@/lib/types';
 
-const MIN_PHOTOS = 3;
-const MAX_PHOTOS = 20;
-const MIN_PHOTO_PX = 800;
 const FURNISHING: Furnishing[] = ['unfurnished', 'semi_furnished', 'furnished'];
 const DOC_TYPES = ['property_tax', 'eb_bill', 'sale_deed', 'rental_agreement', 'other'] as const;
 const STEPS: StringKey[] = ['new.stepDetails', 'new.stepLocation', 'new.stepPhotos', 'new.stepDocs'];
 
-type Photo = PickedImage & { kind: 'interior' | 'exterior' };
+type Photo = PickedImage & { kind: PhotoKind };
 type Errors = Partial<Record<string, string>>;
 
 /** Which wizard step a server-side validation error belongs to. */
@@ -41,8 +39,6 @@ const FIELD_STEP: Record<string, number> = {
   document: 3,
 };
 
-const photoKey = (p: PickedImage) => p.assetId || `${p.fileSize ?? 0}:${p.width}x${p.height}`;
-
 export default function NewListing() {
   const { t, errorText } = useI18n();
   const { user } = useAuth();
@@ -52,7 +48,7 @@ export default function NewListing() {
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
 
-  const [category, setCategory] = useState<Category>('rooms');
+  const [category, setCategory] = useState<Category>('house');
   const [form, setForm] = useState({ title: '', description: '', rent: '', deposit: '', bookingAmount: '', address: '', district: '', area: '', landmark: '' });
   const [furnishing, setFurnishing] = useState<Furnishing>('unfurnished');
   const [amenities, setAmenities] = useState<Amenity[]>([]);
@@ -122,26 +118,11 @@ export default function NewListing() {
   }
 
   function addPhotos(picked: PickedImage[]) {
-    const seen = new Set(photos.map(photoKey));
-    let duplicates = 0;
-    let lowRes = 0;
-    const accepted: Photo[] = [];
-    for (const img of picked) {
-      if (Math.max(img.width, img.height) < MIN_PHOTO_PX) {
-        lowRes++;
-        continue;
-      }
-      if (seen.has(photoKey(img))) {
-        duplicates++;
-        continue;
-      }
-      seen.add(photoKey(img));
-      // First photo defaults to exterior; the owner can switch any label.
-      const kind = photos.length + accepted.length === 0 ? 'exterior' : 'interior';
-      accepted.push({ ...img, kind });
-    }
+    const { accepted, duplicates, lowRes } = filterPicked(picked, new Set(photos.map(photoKey)), MAX_PHOTOS - photos.length);
+    // First photo defaults to exterior; the owner can switch any label.
+    const labelled: Photo[] = accepted.map((img, i) => ({ ...img, kind: photos.length + i === 0 ? 'exterior' : 'interior' }));
     setSkipped({ duplicates, lowRes });
-    setPhotos((list) => [...list, ...accepted].slice(0, MAX_PHOTOS));
+    setPhotos((list) => [...list, ...labelled]);
     setErrors((e) => ({ ...e, photos: undefined }));
   }
 

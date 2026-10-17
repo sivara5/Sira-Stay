@@ -2,7 +2,8 @@ export type Role = 'tenant' | 'owner';
 export type RegistrationStep = 'role' | 'phone' | 'kyc' | 'done';
 export type Language = 'en' | 'ta';
 
-export const CATEGORIES = ['rooms', 'villas', 'pg', 'house', 'room_sharing'] as const;
+/** Display order: Homes, Apartments, Villas, PG, Room Sharing ("house" is labelled Homes). */
+export const CATEGORIES = ['house', 'apartments', 'villas', 'pg', 'room_sharing'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export const AMENITIES = ['wifi', 'ac', 'parking', 'power_backup', 'water_24x7', 'washing_machine', 'kitchen', 'food', 'cctv', 'lift'] as const;
@@ -51,6 +52,8 @@ export type PropertyCard = {
   createdAt: string;
   isOwner: boolean;
   unlocked: boolean;
+  favorite: boolean;
+  rating: { average: number | null; count: number };
   status: PropertyStatus;
   bookedFrom?: string;
   bookedUntil?: string;
@@ -95,6 +98,7 @@ export type Booking = {
   holdExpiresAt: number | null;
   property: Pick<PropertyCard, 'id' | 'title' | 'category' | 'area' | 'district' | 'landmark' | 'rent' | 'coverPhoto' | 'approxLocation' | 'status'>;
   payment: { id: string; status: string; refundStatus: RefundStatus } | null;
+  myReview: { rating: number; comment: string | null } | null;
   owner?: OwnerContact;
   exactLocation?: LatLng;
 };
