@@ -3,8 +3,10 @@ import express, { Router } from 'express';
 import { requireRegistered } from '../auth.js';
 import { config } from '../config.js';
 import { all, one, run } from '../db.js';
+import { canonicalDistrict } from '../districts.js';
 import { createProviderOrder, verifyCheckoutSignature, verifyWebhookSignature } from '../payment-provider.js';
 import { getPropertyOr404, markFailed, markPaid, refundPayment, toPayment } from '../services.js';
+import { activePassFor, activeUnlock, passSummary } from '../unlocks.js';
 import { HttpError, newId, nowIso } from '../util.js';
 
 export const paymentsRouter = Router();
@@ -21,18 +23,27 @@ function ownPayment(req) {
 function paymentResponse(payment) {
   const result = { payment: toPayment(payment) };
   if (payment.purpose === 'unlock') {
-    result.unlocked = Boolean(one('SELECT 1 AS ok FROM unlocks WHERE user_id = ? AND property_id = ?', payment.user_id, payment.property_id));
+    const unlock = activeUnlock(payment.user_id, payment.property_id);
+    result.unlocked = Boolean(unlock);
+    result.unlockExpiresAt = unlock?.expires_at ?? null;
+  } else if (payment.purpose === 'district_pass') {
+    const pass = one('SELECT * FROM district_passes WHERE payment_id = ?', payment.id);
+    result.pass = pass ? passSummary(pass) : null;
   } else {
     result.bookingStatus = one('SELECT status FROM bookings WHERE id = ?', payment.booking_id)?.status ?? null;
   }
   return result;
 }
 
-/** Creates (or reuses) a payment order for a ₹9 contact unlock or a booking amount. */
+/**
+ * Creates (or reuses) a payment order: ₹29 single unlock, ₹99 District Pass, or a booking amount.
+ * Nothing is granted here — only a backend-verified payment (signature or webhook) fulfils it.
+ */
 paymentsRouter.post('/', requireRegistered, async (req, res) => {
   const { purpose } = req.body ?? {};
-  let property;
+  let property = null;
   let bookingId = null;
+  let district = null;
   let amount;
   let description;
 
@@ -40,11 +51,24 @@ paymentsRouter.post('/', requireRegistered, async (req, res) => {
     property = getPropertyOr404(req.body.propertyId);
     if (property.status !== 'active') throw new HttpError(409, 'PROPERTY_UNAVAILABLE', 'This listing is no longer available.');
     if (property.owner_id === req.user.id) throw new HttpError(400, 'OWN_PROPERTY', 'This is your own listing.');
-    if (one('SELECT 1 AS ok FROM unlocks WHERE user_id = ? AND property_id = ?', req.user.id, property.id)) {
-      throw new HttpError(409, 'ALREADY_UNLOCKED', 'You have already unlocked this owner’s contact. No need to pay again.');
+    const unlock = activeUnlock(req.user.id, property.id);
+    if (unlock) {
+      throw new HttpError(409, 'ALREADY_UNLOCKED', 'You already have this owner’s contact. No need to pay again.', { expiresAt: unlock.expires_at });
+    }
+    const pass = activePassFor(req.user.id, canonicalDistrict(property.district));
+    if (pass) {
+      throw new HttpError(409, 'USE_DISTRICT_PASS', `Your District Pass covers ${pass.district}. Unlock with a pass credit instead of paying.`);
     }
     amount = config.unlockFeePaise;
     description = `Owner contact unlock · ${property.title}`;
+  } else if (purpose === 'district_pass') {
+    district = canonicalDistrict(req.body.district);
+    if (!district) throw new HttpError(400, 'VALIDATION', 'Choose a Tamil Nadu district for your pass.', { field: 'district' });
+    if (activePassFor(req.user.id, district)) {
+      throw new HttpError(409, 'PASS_ACTIVE', `You already have an active District Pass for ${district}.`);
+    }
+    amount = config.districtPassFeePaise;
+    description = `District Pass · ${district} · ${config.districtPassCredits} unlocks for ${config.districtPassDays} days`;
   } else if (purpose === 'booking') {
     const booking = one('SELECT * FROM bookings WHERE id = ? AND user_id = ?', req.body.bookingId, req.user.id);
     if (!booking) throw new HttpError(404, 'NOT_FOUND', 'Booking not found.');
@@ -61,12 +85,15 @@ paymentsRouter.post('/', requireRegistered, async (req, res) => {
 
   // Reuse an open order instead of creating another one — avoids accidental double charges.
   let payment = one(
-    `SELECT * FROM payments WHERE user_id = ? AND purpose = ? AND property_id = ? AND COALESCE(booking_id, '') = ?
-       AND status = 'created' AND provider = ? AND created_at > ? ORDER BY created_at DESC LIMIT 1`,
+    `SELECT * FROM payments WHERE user_id = ? AND purpose = ? AND COALESCE(property_id, '') = ? AND COALESCE(booking_id, '') = ?
+       AND COALESCE(district, '') = ? AND amount = ? AND status = 'created' AND provider = ? AND created_at > ?
+     ORDER BY created_at DESC LIMIT 1`,
     req.user.id,
     purpose,
-    property.id,
+    property?.id ?? '',
     bookingId ?? '',
+    district ?? '',
+    amount,
     config.paymentProvider,
     new Date(Date.now() - REUSE_WINDOW_MS).toISOString(),
   );
@@ -75,21 +102,23 @@ paymentsRouter.post('/', requireRegistered, async (req, res) => {
       id: newId(),
       user_id: req.user.id,
       purpose,
-      property_id: property.id,
+      property_id: property?.id ?? null,
       booking_id: bookingId,
+      district,
       amount,
       currency: 'INR',
       provider: config.paymentProvider,
     };
     const orderId = await createProviderOrder(draft);
     run(
-      `INSERT INTO payments (id, user_id, purpose, property_id, booking_id, amount, currency, provider, provider_order_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO payments (id, user_id, purpose, property_id, booking_id, district, amount, currency, provider, provider_order_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       draft.id,
       draft.user_id,
       purpose,
-      property.id,
+      draft.property_id,
       bookingId,
+      district,
       amount,
       'INR',
       draft.provider,
@@ -145,34 +174,36 @@ paymentsRouter.post('/:id/cancel', requireRegistered, (req, res) => {
 });
 
 /**
- * Refunds are available only for: duplicate payments, technical failures, or the owner
- * withdrawing the listing. Clear-cut cases are refunded instantly; others go to review.
+ * Refunds here are for duplicate payments, technical failures, or the owner withdrawing the listing.
+ * Wrong owner details are reported per unlock (POST /unlocks/:id/report) within 48 hours.
  */
 paymentsRouter.post('/:id/refund-request', requireRegistered, async (req, res) => {
   const payment = ownPayment(req);
   const reason = req.body?.reason;
   const note = typeof req.body?.note === 'string' ? req.body.note.slice(0, 500) : null;
-  if (!['duplicate', 'technical', 'withdrawn'].includes(reason)) {
+  const allowed = payment.purpose === 'district_pass' ? ['duplicate', 'technical'] : ['duplicate', 'technical', 'withdrawn'];
+  if (!allowed.includes(reason)) {
     throw new HttpError(400, 'REFUND_NOT_ELIGIBLE', 'Refunds are available only for duplicate payments, technical failures, or withdrawn listings.');
   }
   if (payment.status !== 'paid') throw new HttpError(400, 'REFUND_NOT_ELIGIBLE', 'Only completed payments can be refunded.');
   if (payment.refund_status) throw new HttpError(409, 'REFUND_EXISTS', 'A refund has already been requested for this payment.');
 
-  const property = getPropertyOr404(payment.property_id);
+  const property = payment.property_id ? getPropertyOr404(payment.property_id) : null;
   const hasEarlierPaidTwin = Boolean(
     one(
-      `SELECT 1 AS ok FROM payments WHERE user_id = ? AND purpose = ? AND property_id = ? AND COALESCE(booking_id, '') = ?
-         AND status = 'paid' AND id <> ? AND paid_at < ?`,
+      `SELECT 1 AS ok FROM payments WHERE user_id = ? AND purpose = ? AND COALESCE(property_id, '') = ? AND COALESCE(booking_id, '') = ?
+         AND COALESCE(district, '') = ? AND status = 'paid' AND id <> ? AND paid_at < ?`,
       payment.user_id,
       payment.purpose,
-      payment.property_id,
+      payment.property_id ?? '',
       payment.booking_id ?? '',
+      payment.district ?? '',
       payment.id,
       payment.paid_at,
     ),
   );
   const autoApprove =
-    (reason === 'withdrawn' && property.status === 'withdrawn') ||
+    (reason === 'withdrawn' && property?.status === 'withdrawn') ||
     (reason === 'duplicate' && (payment.is_duplicate || hasEarlierPaidTwin)) ||
     (reason === 'technical' && payment.fulfilment_failed);
 
@@ -189,12 +220,16 @@ export const myPaymentsRouter = Router();
 myPaymentsRouter.get('/', requireRegistered, (req, res) => {
   const rows = all(
     `SELECT p.*, pr.title AS property_title, pr.status AS property_status FROM payments p
-       JOIN properties pr ON pr.id = p.property_id
+       LEFT JOIN properties pr ON pr.id = p.property_id
       WHERE p.user_id = ? AND p.status = 'paid' ORDER BY p.paid_at DESC`,
     req.user.id,
   );
   res.json({
-    payments: rows.map((p) => ({ ...toPayment(p), propertyTitle: p.property_title, propertyWithdrawn: p.property_status === 'withdrawn' })),
+    payments: rows.map((p) => ({
+      ...toPayment(p),
+      propertyTitle: p.property_title ?? (p.district ? `District Pass · ${p.district}` : null),
+      propertyWithdrawn: p.property_status === 'withdrawn',
+    })),
   });
 });
 

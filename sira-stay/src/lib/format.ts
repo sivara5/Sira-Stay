@@ -10,6 +10,14 @@ export function formatDate(value: string, lang: Language) {
   return date.toLocaleDateString(locale(lang), { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** "21 April 2027" — used for unlock and pass expiry dates. */
+export function formatDateLong(iso: string, lang: Language) {
+  return new Date(iso).toLocaleDateString(locale(lang), { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** Whole hours left until `iso` (never negative). */
+export const hoursUntil = (iso: string) => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 3_600_000));
+
 export function formatTime(iso: string, lang: Language) {
   return new Date(iso).toLocaleTimeString(locale(lang), { hour: 'numeric', minute: '2-digit' });
 }

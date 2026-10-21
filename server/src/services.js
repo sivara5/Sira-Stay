@@ -2,6 +2,7 @@ import { config } from './config.js';
 import { all, one, run, tx } from './db.js';
 import { APPROX_RADIUS_M, haversineKm, publicDistanceKm } from './geo.js';
 import { refundProviderPayment } from './payment-provider.js';
+import { activePassFor, activeUnlock, createPass, grantUnlock, toUnlock, unlockOptions } from './unlocks.js';
 import { HttpError, decryptJson, nowIso, todayIST } from './util.js';
 
 // Display order: Homes, Apartments, Villas, PG, Room Sharing ("house" is shown as Homes).
@@ -48,7 +49,7 @@ export const exactLocation = (property) => decryptJson(property.location_enc); /
 export function hasContactAccess(user, property) {
   if (!user) return false;
   if (property.owner_id === user.id) return true;
-  if (one('SELECT 1 AS ok FROM unlocks WHERE user_id = ? AND property_id = ?', user.id, property.id)) return true;
+  if (activeUnlock(user.id, property.id)) return true; // unlocks last 6 months
   return Boolean(
     one("SELECT 1 AS ok FROM bookings WHERE user_id = ? AND property_id = ? AND status = 'CONFIRMED'", user.id, property.id),
   );
@@ -91,6 +92,7 @@ export function toCard(property, { user, origin } = {}) {
     createdAt: property.created_at,
     isOwner: user?.id === property.owner_id,
     unlocked: hasContactAccess(user, property),
+    unlockExpiresAt: (user && activeUnlock(user.id, property.id)?.expires_at) ?? null,
     favorite,
     rating: propertyRating(property.id),
     ...propertyStatus(property),
@@ -108,9 +110,13 @@ export function toDetail(property, user) {
     photos: all('SELECT id, url, kind FROM photos WHERE property_id = ? ORDER BY position', property.id),
     bookedPeriods: bookedPeriods(property.id),
     unlockFee: config.unlockFeePaise / 100,
+    unlock: null,
+    unlockOptions: unlockOptions(user, property),
     owner: null,
     exactLocation: null,
   };
+  const unlock = user && activeUnlock(user.id, property.id);
+  if (unlock) detail.unlock = toUnlock(unlock);
   if (card.unlocked) {
     const owner = one('SELECT id, name, phone, whatsapp, available FROM users WHERE id = ?', property.owner_id);
     detail.owner = {
@@ -139,6 +145,7 @@ export function toPayment(p) {
     purpose: p.purpose,
     propertyId: p.property_id,
     bookingId: p.booking_id,
+    district: p.district,
     amount: p.amount / 100,
     currency: p.currency,
     provider: p.provider,
@@ -171,17 +178,21 @@ export async function markPaid(paymentId, providerPaymentId) {
     );
 
     if (payment.purpose === 'unlock') {
-      if (one('SELECT 1 AS ok FROM unlocks WHERE user_id = ? AND property_id = ?', payment.user_id, payment.property_id)) {
+      // Already unlocked (e.g. two orders paid) → this payment is a duplicate and is refunded.
+      if (activeUnlock(payment.user_id, payment.property_id)) {
         run('UPDATE payments SET is_duplicate = 1 WHERE id = ?', paymentId);
         return { refund: 'duplicate' };
       }
-      run(
-        'INSERT INTO unlocks (user_id, property_id, payment_id, created_at) VALUES (?, ?, ?, ?)',
-        payment.user_id,
-        payment.property_id,
-        paymentId,
-        now,
-      );
+      grantUnlock({ userId: payment.user_id, propertyId: payment.property_id, method: 'payment', paymentId });
+      return { refund: null };
+    }
+
+    if (payment.purpose === 'district_pass') {
+      if (activePassFor(payment.user_id, payment.district)) {
+        run('UPDATE payments SET is_duplicate = 1 WHERE id = ?', paymentId);
+        return { refund: 'duplicate' };
+      }
+      createPass(payment.user_id, payment.district, paymentId);
       return { refund: null };
     }
 
@@ -254,6 +265,10 @@ export async function refundPayment(paymentId, reason, note) {
         payment.booking_id,
         paymentId,
       );
+    }
+    if (payment.purpose === 'district_pass') {
+      // A refunded pass stops working immediately.
+      run('UPDATE district_passes SET expires_at = ? WHERE payment_id = ? AND expires_at > ?', nowIso(), paymentId, nowIso());
     }
   } catch (err) {
     console.error('[refund] provider refund failed, queued for review', err);

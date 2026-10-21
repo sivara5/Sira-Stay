@@ -86,9 +86,10 @@ CREATE INDEX IF NOT EXISTS photos_property ON photos(property_id, position);
 CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id),
-  purpose TEXT NOT NULL,                        -- unlock | booking
-  property_id TEXT NOT NULL REFERENCES properties(id),
+  purpose TEXT NOT NULL,                        -- unlock | booking | district_pass
+  property_id TEXT REFERENCES properties(id),   -- NULL for district passes
   booking_id TEXT,
+  district TEXT,                                -- district passes only
   amount INTEGER NOT NULL,                      -- paise
   currency TEXT NOT NULL DEFAULT 'INR',
   provider TEXT NOT NULL,                       -- mock | razorpay
@@ -98,20 +99,60 @@ CREATE TABLE IF NOT EXISTS payments (
   is_duplicate INTEGER NOT NULL DEFAULT 0,
   fulfilment_failed INTEGER NOT NULL DEFAULT 0,
   refund_status TEXT,                           -- under_review | refunded | rejected
-  refund_reason TEXT,                           -- duplicate | technical | withdrawn
+  refund_reason TEXT,                           -- duplicate | technical | withdrawn | wrong_details
   refund_note TEXT,
   provider_refund_id TEXT,
   created_at TEXT NOT NULL,
   paid_at TEXT
 );
-CREATE INDEX IF NOT EXISTS payments_order ON payments(provider_order_id);
 
+-- Each unlock opens one property's owner contact for 6 months.
 CREATE TABLE IF NOT EXISTS unlocks (
+  id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id),
   property_id TEXT NOT NULL REFERENCES properties(id),
-  payment_id TEXT NOT NULL,
+  method TEXT NOT NULL,                         -- payment | pass | credit
+  payment_id TEXT,
+  pass_id TEXT,
+  credit_id TEXT,
+  unlocked_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  report_deadline TEXT NOT NULL,                -- "Report Wrong Details" allowed until (48 h)
+  status TEXT NOT NULL DEFAULT 'active',        -- active | reported
+  reported_at TEXT,
+  report_reason TEXT,
+  report_resolution TEXT                        -- refund | credit | pass_credit | credit_returned
+);
+
+CREATE TABLE IF NOT EXISTS district_passes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  district TEXT NOT NULL,                       -- one of the 38 Tamil Nadu districts
+  payment_id TEXT NOT NULL UNIQUE,
+  credits_total INTEGER NOT NULL,
+  activated_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS district_passes_user ON district_passes(user_id, district);
+
+-- One row per pass credit spent; returned_at is set when a wrong-details report gives the credit back.
+CREATE TABLE IF NOT EXISTS pass_unlocks (
+  pass_id TEXT NOT NULL REFERENCES district_passes(id),
+  property_id TEXT NOT NULL REFERENCES properties(id),
+  unlock_id TEXT NOT NULL,
+  used_at TEXT NOT NULL,
+  returned_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS pass_unlocks_once ON pass_unlocks(pass_id, property_id) WHERE returned_at IS NULL;
+
+-- Free single-unlock credits (from wrong-details reports).
+CREATE TABLE IF NOT EXISTS unlock_credits (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  source_unlock_id TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL,
-  PRIMARY KEY (user_id, property_id)
+  used_at TEXT,
+  used_unlock_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS bookings (
@@ -172,6 +213,71 @@ db.exec(`UPDATE users SET onboarded = 1
 
 // Categories are now Homes, Apartments, Villas, PG, Room Sharing — the old "Rooms" category folds into Room Sharing.
 db.exec("UPDATE properties SET category = 'room_sharing' WHERE category = 'rooms'");
+
+const hasColumn = (table, column) =>
+  Boolean(db.prepare(`SELECT 1 AS ok FROM pragma_table_info('${table}') WHERE name = ?`).get(column));
+
+function migrate(fn) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    fn();
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+// Migration: payments may now be for a District Pass (no property), so property_id becomes nullable.
+if (!hasColumn('payments', 'district')) {
+  migrate(() =>
+    db.exec(`
+      ALTER TABLE payments RENAME TO payments_legacy;
+      CREATE TABLE payments (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), purpose TEXT NOT NULL,
+        property_id TEXT REFERENCES properties(id), booking_id TEXT, district TEXT, amount INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'INR', provider TEXT NOT NULL, provider_order_id TEXT, provider_payment_id TEXT,
+        status TEXT NOT NULL DEFAULT 'created', is_duplicate INTEGER NOT NULL DEFAULT 0, fulfilment_failed INTEGER NOT NULL DEFAULT 0,
+        refund_status TEXT, refund_reason TEXT, refund_note TEXT, provider_refund_id TEXT, created_at TEXT NOT NULL, paid_at TEXT
+      );
+      INSERT INTO payments (id, user_id, purpose, property_id, booking_id, amount, currency, provider, provider_order_id,
+          provider_payment_id, status, is_duplicate, fulfilment_failed, refund_status, refund_reason, refund_note,
+          provider_refund_id, created_at, paid_at)
+        SELECT id, user_id, purpose, property_id, booking_id, amount, currency, provider, provider_order_id,
+          provider_payment_id, status, is_duplicate, fulfilment_failed, refund_status, refund_reason, refund_note,
+          provider_refund_id, created_at, paid_at
+        FROM payments_legacy;
+      DROP TABLE payments_legacy;
+    `),
+  );
+}
+
+// Migration: unlocks now expire after 6 months and can be reported. Earlier (₹9) unlocks keep their
+// original unlock date, so they expire 6 months after it.
+if (!hasColumn('unlocks', 'id')) {
+  migrate(() =>
+    db.exec(`
+      ALTER TABLE unlocks RENAME TO unlocks_legacy;
+      CREATE TABLE unlocks (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), property_id TEXT NOT NULL REFERENCES properties(id),
+        method TEXT NOT NULL, payment_id TEXT, pass_id TEXT, credit_id TEXT, unlocked_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+        report_deadline TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', reported_at TEXT, report_reason TEXT,
+        report_resolution TEXT
+      );
+      INSERT INTO unlocks (id, user_id, property_id, method, payment_id, unlocked_at, expires_at, report_deadline)
+        SELECT lower(hex(randomblob(16))), user_id, property_id, 'payment', payment_id, created_at,
+          strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+6 months'),
+          strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+48 hours')
+        FROM unlocks_legacy;
+      DROP TABLE unlocks_legacy;
+    `),
+  );
+}
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS payments_order ON payments(provider_order_id);
+  CREATE INDEX IF NOT EXISTS unlocks_user_property ON unlocks(user_id, property_id, status);
+`);
 
 const statements = new Map();
 function stmt(sql) {

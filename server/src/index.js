@@ -10,6 +10,7 @@ import { bookingsRouter, myBookingsRouter } from './routes/bookings.js';
 import { conversationsRouter } from './routes/messages.js';
 import { myPaymentsRouter, paymentsRouter, webhookRouter } from './routes/payments.js';
 import { MAX_PHOTOS, myFavoritesRouter, myPropertiesRouter, propertiesRouter } from './routes/properties.js';
+import { myPassesRouter, unlocksRouter } from './routes/unlocks.js';
 import { seedDemoData } from './seed.js';
 import { HttpError } from './util.js';
 
@@ -38,6 +39,7 @@ app.get('/health', (_req, res) =>
     emailProvider: config.emailProvider,
     smsProvider: config.smsProvider,
     unlockFee: config.unlockFeePaise / 100,
+    districtPassFee: config.districtPassFeePaise / 100,
   }),
 );
 
@@ -46,6 +48,8 @@ app.use('/me', meRouter);
 app.use('/properties', propertiesRouter);
 app.use('/my/properties', myPropertiesRouter);
 app.use('/my/favorites', myFavoritesRouter);
+app.use('/unlocks', unlocksRouter);
+app.use('/my/district-passes', myPassesRouter);
 app.use('/bookings', bookingsRouter);
 app.use('/my/bookings', myBookingsRouter);
 app.use('/payments', paymentsRouter);

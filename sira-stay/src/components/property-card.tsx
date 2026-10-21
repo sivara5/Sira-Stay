@@ -16,7 +16,7 @@ type Props = { property: Card; onPress: () => void; onFavoriteChange?: (favorite
 
 /**
  * Exactly one main photo, then name, type, location, price, deposit and rating.
- * Owner contact stays locked until the ₹9 unlock.
+ * Owner contact stays locked until unlocked (₹29, District Pass or free credit) — then for 6 months.
  */
 export function PropertyCard({ property, onPress, onFavoriteChange }: Props) {
   const { t, lang } = useI18n();
@@ -79,7 +79,11 @@ export function PropertyCard({ property, onPress, onFavoriteChange }: Props) {
               color={property.unlocked ? colors.success : colors.textMuted}
             />
             <Text style={[styles.contactText, property.unlocked && { color: colors.success }]}>
-              {property.unlocked ? t('card.unlocked') : t('card.locked')}
+              {property.unlockExpiresAt
+                ? t('prop.unlockedTill', { date: formatDate(property.unlockExpiresAt, lang) })
+                : property.unlocked
+                  ? t('card.unlocked')
+                  : t('card.locked')}
             </Text>
           </View>
         )}

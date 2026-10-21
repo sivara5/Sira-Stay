@@ -11,7 +11,11 @@ import { useI18n } from '@/lib/i18n';
 import type { Payment, RefundReason } from '@/lib/types';
 import { useQuery } from '@/lib/use-query';
 
-const REASONS: RefundReason[] = ['duplicate', 'technical', 'withdrawn'];
+// Wrong owner details are reported per unlock (property page, within 48 h), not here.
+const reasonsFor = (p: Payment): RefundReason[] =>
+  p.purpose === 'district_pass' ? ['duplicate', 'technical'] : ['duplicate', 'technical', 'withdrawn'];
+
+const PURPOSE_LABEL = { unlock: 'payments.unlock', booking: 'payments.booking', district_pass: 'payments.pass' } as const;
 
 export default function Payments() {
   const { t } = useI18n();
@@ -55,7 +59,7 @@ function PaymentCard({ payment: p, onChanged }: { payment: Payment; onChanged: (
     <View style={styles.card}>
       <View style={styles.top}>
         <View style={styles.flex}>
-          <Text style={styles.purpose}>{p.purpose === 'unlock' ? t('payments.unlock') : t('payments.booking')}</Text>
+          <Text style={styles.purpose}>{t(PURPOSE_LABEL[p.purpose])}</Text>
           <Text style={styles.title} numberOfLines={1}>
             {p.propertyTitle}
           </Text>
@@ -65,12 +69,15 @@ function PaymentCard({ payment: p, onChanged }: { payment: Payment; onChanged: (
       </View>
       {p.isDuplicate && <Text style={styles.tag}>{t('payments.duplicateTag')}</Text>}
       {p.refundStatus ? (
-        <Text style={[styles.refund, p.refundStatus === 'refunded' && { color: colors.success }]}>{t(`refundStatus.${p.refundStatus}`)}</Text>
+        <Text style={[styles.refund, p.refundStatus === 'refunded' && { color: colors.success }]}>
+          {t(`refundStatus.${p.refundStatus}`)}
+          {p.refundReason ? ` · ${t(`refund.${p.refundReason}`)}` : ''}
+        </Text>
       ) : choosing ? (
         <View style={styles.reasons}>
           <Text style={styles.muted}>{t('payments.chooseReason')}</Text>
           <View style={styles.chips}>
-            {REASONS.map((r) => (
+            {reasonsFor(p).map((r) => (
               <Chip key={r} label={t(`refund.${r}`)} onPress={() => !submitting && request(r)} />
             ))}
           </View>

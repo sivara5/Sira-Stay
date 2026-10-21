@@ -13,7 +13,7 @@ export type Furnishing = 'unfurnished' | 'semi_furnished' | 'furnished';
 export type PropertyStatus = 'AVAILABLE' | 'BOOKED' | 'WITHDRAWN';
 export type BookingStatus = 'PENDING_PAYMENT' | 'CONFIRMED' | 'EXPIRED' | 'FAILED' | 'CANCELLED';
 export type RefundStatus = 'under_review' | 'processing' | 'refunded' | 'rejected' | null;
-export type RefundReason = 'duplicate' | 'technical' | 'withdrawn';
+export type RefundReason = 'duplicate' | 'technical' | 'withdrawn' | 'wrong_details';
 
 export type Me = {
   id: string;
@@ -52,6 +52,8 @@ export type PropertyCard = {
   createdAt: string;
   isOwner: boolean;
   unlocked: boolean;
+  /** When the viewer's 6-month unlock ends (null if not unlocked by payment/pass/credit). */
+  unlockExpiresAt: string | null;
   favorite: boolean;
   rating: { average: number | null; count: number };
   status: PropertyStatus;
@@ -68,9 +70,48 @@ export type PropertyDetail = PropertyCard & {
   photos: { id: string; url: string; kind: 'interior' | 'exterior' }[];
   bookedPeriods: { moveInDate: string; endDate: string }[];
   unlockFee: number;
+  unlock: Unlock | null;
+  unlockOptions: UnlockOptions;
   owner: OwnerContact | null;
   exactLocation: (LatLng & { address: string }) | null;
 };
+
+export type Unlock = {
+  id: string;
+  method: 'payment' | 'pass' | 'credit';
+  unlockedAt: string;
+  expiresAt: string;
+  reportDeadline: string;
+  canReport: boolean;
+};
+
+export type PassStatus = 'ACTIVE' | 'EXPIRED' | 'FULLY_USED';
+
+export type PassSummary = {
+  id: string;
+  district: string;
+  totalCredits: number;
+  usedCredits: number;
+  remainingCredits: number;
+  activatedAt: string;
+  expiresAt: string;
+  status: PassStatus;
+};
+
+export type UnlockOptions = {
+  price: number;
+  passPrice: number;
+  passCredits: number;
+  passDays: number;
+  unlockMonths: number;
+  reportHours: number;
+  /** Canonical district of the listing, or null if a District Pass can't apply. */
+  district: string | null;
+  pass: PassSummary | null;
+  freeCredits: number;
+};
+
+export type ReportReason = 'wrong_number' | 'not_reachable' | 'not_owner' | 'not_available' | 'other';
 
 export type OwnerListing = PropertyCard & {
   verification: 'pending' | 'verified';
@@ -105,9 +146,10 @@ export type Booking = {
 
 export type Payment = {
   id: string;
-  purpose: 'unlock' | 'booking';
-  propertyId: string;
+  purpose: 'unlock' | 'booking' | 'district_pass';
+  propertyId: string | null;
   bookingId: string | null;
+  district: string | null;
   amount: number;
   currency: string;
   provider: 'mock' | 'razorpay';
@@ -132,7 +174,13 @@ export type Checkout = {
   prefill: { email: string; contact: string | null };
 };
 
-export type PaymentResult = { payment: Payment; unlocked?: boolean; bookingStatus?: BookingStatus | null };
+export type PaymentResult = {
+  payment: Payment;
+  unlocked?: boolean;
+  unlockExpiresAt?: string | null;
+  pass?: PassSummary | null;
+  bookingStatus?: BookingStatus | null;
+};
 
 export type Message = { id: string; kind: 'text' | 'missed_call'; body: string; createdAt: string; mine: boolean; system: boolean };
 

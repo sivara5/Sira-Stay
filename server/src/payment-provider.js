@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 import { HttpError, safeEqual } from './util.js';
 
-const RAZORPAY_API = 'https://api.razorpay.com/v1';
+const RAZORPAY_API = config.razorpay.apiBase;
 
 function razorpayHeaders() {
   const { keyId, keySecret } = config.razorpay;
@@ -23,7 +23,11 @@ export async function createProviderOrder(payment) {
       amount: payment.amount,
       currency: payment.currency,
       receipt: payment.id.slice(0, 40),
-      notes: { purpose: payment.purpose, property_id: payment.property_id },
+      notes: {
+        purpose: payment.purpose,
+        ...(payment.property_id && { property_id: payment.property_id }),
+        ...(payment.district && { district: payment.district }),
+      },
     }),
   });
   if (!res.ok) {

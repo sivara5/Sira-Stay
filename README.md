@@ -1,6 +1,6 @@
 # Sira Stay
 
-Rental booking app for Tamil Nadu: rooms, villas, PGs, houses and room sharing, listed directly by KYC-verified owners. Tenants unlock an owner's phone and WhatsApp for a one-time ₹9 and can book a stay in the app.
+Rental booking app for Tamil Nadu: homes, apartments, villas, PGs and room sharing, listed directly by KYC-verified owners. Tenants unlock an owner's phone and WhatsApp for ₹29, or get 40 unlocks in one district with a ₹99 District Pass. They can also book a stay in the app.
 
 | Folder | What it is |
 | --- | --- |
@@ -59,12 +59,43 @@ Demo owner accounts (sign in with the email; the code shows in the app):
 
 **Suggested walkthrough:** register as a tenant, then:
 1. Pick a category in the top menu.
-2. Open a listing and unlock the owner contact for ₹9.
+2. Open a listing and unlock the owner contact for ₹29, or buy a ₹99 District Pass for that district and unlock with a credit.
 3. Tap **Call**. When you come back to the app, answer **No** to see "Owner not available" and use **Message later**.
 4. **Book now** and pay the booking amount.
 5. Open **My Bookings** and tap **View on Map** → **Open Map**.
 
 Then register a second account as a house owner, complete KYC, and add a property with 3 or more photos.
+
+## Unlocking owner contacts
+
+| | Single Unlock | District Pass |
+| --- | --- | --- |
+| Price | ₹29 per property | ₹99, for one district you choose before buying |
+| Covers | That one property | Up to **40 unique** properties in that district |
+| Validity | — | 30 days from activation; then **Expired** |
+| Each unlock lasts | 6 months ("Unlocked till 21 April 2027"), then locks again | 6 months, even after the pass expires |
+| Wrong details | Report within 48 h: **full refund** or a **free unlock credit**, your choice | Report within 48 h: the **credit goes back** on the pass |
+
+- If you have an Active pass for a property's district, the app uses a pass credit instead of charging ₹29.
+- A credit is used only when an unlock succeeds. Unlocking the same property twice never uses a second credit.
+- **Duplicate payments** (e.g. paying twice) are detected and refunded automatically; you never get two unlock records.
+- The **District Pass dashboard** (Profile → District Pass) shows the district, 40 total credits, used and remaining credits, activation and expiry dates, and the status (Active, Expired or Fully Used).
+
+### Testing payments in Razorpay Test Mode
+
+The server never trusts the app's "payment successful" message. Nothing is unlocked until the server has verified Razorpay's HMAC signature (or a signed webhook), using the secret that lives only in `server/.env`.
+
+1. Razorpay Dashboard → switch to **Test Mode** → *Account & Settings → API Keys* → generate a key pair.
+2. Create `server/.env` (git ignores it) with:
+   ```
+   RAZORPAY_KEY_ID=rzp_test_xxxxxxxx
+   RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxx
+   ```
+3. Restart the API. `GET /health` should show `"paymentProvider":"razorpay"`.
+4. In the app, pay ₹29 or ₹99. In Razorpay's test checkout, use UPI ID `success@razorpay` (or `failure@razorpay` to test a failure), or a [test card](https://razorpay.com/docs/payments/payments/test-card-details/).
+5. Optional webhook: add `https://<your-api>/webhooks/razorpay` (events `payment.captured`, `payment.failed`) and put its secret in `RAZORPAY_WEBHOOK_SECRET`.
+
+Without keys, the app uses the built-in test checkout instead of Razorpay.
 
 ## How the requirements are implemented
 
@@ -73,10 +104,11 @@ Then register a second account as a house owner, complete KYC, and add a propert
 | Tenant sign-up: email → "Are you a Tenant?" → phone OTP. Done. | `sira-stay/src/app/onboarding/` |
 | Owner sign-up: email → role → phone OTP → registration + KYC (ID type, number, photo) | `onboarding/kyc.tsx`, `POST /auth/kyc` |
 | Property documents requested only when listing | Step 4 of `property/new.tsx` |
-| Top menu: Rooms · Villas · PG · House · Room Sharing. Shows only the selected category. | `components/category-tabs.tsx`, `GET /properties?category=` |
+| Categories: Homes · Apartments · Villas · PG · Room Sharing. Shows only the selected category. | `components/category-tabs.tsx`, `GET /properties?category=` |
 | Card shows rent, address (area, city), location. Owner contact stays locked. | `components/property-card.tsx` |
-| ₹9 one-time unlock → owner name, phone, WhatsApp | `property/[id].tsx`, `POST /payments {purpose:'unlock'}` |
-| Refund only for duplicate payment, technical failure, or owner withdrawing the listing | `app/payments.tsx`, `POST /payments/:id/refund-request` |
+| ₹29 single unlock / ₹99 District Pass → owner name, phone, WhatsApp for 6 months | `property/[id].tsx`, `district-pass.tsx`, `server/src/unlocks.js`, `POST /payments`, `POST /unlocks` |
+| Report wrong details within 48 h → refund or free credit (pass: credit back) | `unlock/[id]/report.tsx`, `POST /unlocks/:id/report` |
+| Other refunds: duplicate payment, technical failure, owner withdrawing the listing | `app/payments.tsx`, `POST /payments/:id/refund-request` |
 | "Owner not available, try again later" + Message later (in-app chat) | `property/[id].tsx`, `chat/…`, owner toggle in Profile |
 | Photos: minimum 3, maximum 20, clear, no duplicates, interior + exterior | Step 3 of `property/new.tsx`. The server also checks file content hashes, sizes and count. |
 | English ⇄ Tamil in onboarding and in Profile settings | `components/language-switch.tsx`, `lib/strings.ts` |
@@ -102,7 +134,7 @@ Then register a second account as a house owner, complete KYC, and add a propert
 ## Going live checklist
 
 1. In `server/.env`, set `APP_SECRET` (64 hex characters). It encrypts locations, so keep it safe and never change it once you have data.
-2. Add Razorpay keys (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`) and a webhook pointing to `https://<api>/webhooks/razorpay`, with secret `RAZORPAY_WEBHOOK_SECRET`.
+2. Test everything in Razorpay Test Mode first (see above), then swap in **live** keys (`rzp_live_…`) in `server/.env`. Add a webhook pointing to `https://<api>/webhooks/razorpay`, with secret `RAZORPAY_WEBHOOK_SECRET`.
 3. Add SMTP details for email OTP and Twilio for SMS OTP. For Indian SMS, a DLT-registered provider such as MSG91 may be required. Swap it in `server/src/otp.js`.
 4. Set `AUTO_APPROVE_KYC=false`. There is no admin review screen yet, so build one or review records directly in the database.
 5. Host the API over HTTPS and back up `server/data/`. SQLite is fine for a pilot; move to Postgres for scale.

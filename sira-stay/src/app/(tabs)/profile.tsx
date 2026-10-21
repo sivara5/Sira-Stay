@@ -183,6 +183,12 @@ export default function Profile() {
           </View>
         )}
 
+        <Pressable style={styles.linkRow} onPress={() => router.push('/district-pass')}>
+          <Ionicons name="ticket-outline" size={20} color={colors.text} />
+          <Text style={[styles.label, styles.flex]}>{t('pass.title')}</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </Pressable>
+
         <Pressable style={styles.linkRow} onPress={() => router.push('/messages')}>
           <Ionicons name="chatbubbles-outline" size={20} color={colors.text} />
           <Text style={[styles.label, styles.flex]}>{t('messages.title')}</Text>

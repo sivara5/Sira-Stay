@@ -9,26 +9,29 @@ import { Button } from '@/components/button';
 import { Banner } from '@/components/feedback';
 import { colors, radius } from '@/constants/theme';
 import { api } from '@/lib/api';
-import { rupees } from '@/lib/format';
+import { districtLabel } from '@/lib/districts';
+import { formatDateLong, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { Checkout, PaymentResult } from '@/lib/types';
 
 type Phase = 'ready' | 'processing' | 'success' | 'failed' | 'refunded';
-type Params = { paymentId: string; checkout: string; purpose: 'unlock' | 'booking'; propertyId: string; bookingId?: string };
+type Params = { paymentId: string; checkout: string; purpose: 'unlock' | 'booking' | 'district_pass'; propertyId: string; bookingId?: string };
 
 export default function CheckoutScreen() {
   const params = useLocalSearchParams<Params>();
-  const { t, errorText } = useI18n();
+  const { t, lang, errorText } = useI18n();
   const checkout = useMemo(() => JSON.parse(params.checkout) as Checkout, [params.checkout]);
   const [phase, setPhase] = useState<Phase>('ready');
   const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<PaymentResult | null>(null);
   const amount = rupees(checkout.amount / 100);
 
   /** The server is the source of truth — only its answer decides success. */
-  function applyResult(result: PaymentResult) {
-    const { payment } = result;
+  function applyResult(next: PaymentResult) {
+    setResult(next);
+    const { payment } = next;
     if (payment.status !== 'paid') return setPhase('failed');
-    if (payment.purpose === 'booking' && result.bookingStatus !== 'CONFIRMED') return setPhase('refunded');
+    if (payment.purpose === 'booking' && next.bookingStatus !== 'CONFIRMED') return setPhase('refunded');
     setPhase('success');
   }
 
@@ -106,7 +109,15 @@ export default function CheckoutScreen() {
             icon="checkmark-circle"
             color={colors.success}
             title={t('pay.successTitle')}
-            body={params.purpose === 'booking' ? t('pay.bookedMsg') : t('pay.unlockedMsg')}
+            body={
+              params.purpose === 'booking'
+                ? t('pay.bookedMsg')
+                : params.purpose === 'district_pass'
+                  ? t('pay.passMsg', { district: districtLabel(result?.payment.district ?? '', lang) })
+                  : result?.unlockExpiresAt
+                    ? `${t('pay.unlockedMsg')}\n\n${t('prop.unlockedTill', { date: formatDateLong(result.unlockExpiresAt, lang) })}`
+                    : t('pay.unlockedMsg')
+            }
           />
         )}
         {phase === 'refunded' && <Result icon="refresh-circle" color={colors.accent} title={t('pay.refundedTitle')} body={t('pay.refundedMsg')} />}
@@ -154,7 +165,9 @@ export default function CheckoutScreen() {
         )}
         {phase === 'success' && (
           <Button
-            title={params.purpose === 'booking' ? t('pay.viewBooking') : t('pay.viewContact')}
+            title={
+              params.purpose === 'booking' ? t('pay.viewBooking') : params.purpose === 'district_pass' ? t('pay.viewPass') : t('pay.viewContact')
+            }
             icon="arrow-forward"
             onPress={done}
           />

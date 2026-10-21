@@ -40,6 +40,8 @@ const razorpay = {
   keyId: env.RAZORPAY_KEY_ID || '',
   keySecret: env.RAZORPAY_KEY_SECRET || '',
   webhookSecret: env.RAZORPAY_WEBHOOK_SECRET || '',
+  // Only changed for automated tests against a local Razorpay simulator.
+  apiBase: (env.RAZORPAY_API_BASE || 'https://api.razorpay.com/v1').replace(/\/$/, ''),
 };
 
 const smtp = {
@@ -62,7 +64,12 @@ export const config = {
   uploadDir,
   privateDir,
   secret: loadSecret(),
-  unlockFeePaise: 900, // ₹9 one-time owner contact unlock
+  unlockFeePaise: 2900, // ₹29 single owner-contact unlock
+  districtPassFeePaise: 9900, // ₹99 District Pass
+  districtPassCredits: 40, // unique unlocks per pass
+  districtPassDays: 30, // pass validity from activation
+  unlockMonths: 6, // every unlock stays open this long
+  reportWindowHours: 48, // "Report Wrong Details" window
   bookingHoldMinutes: Number(env.BOOKING_HOLD_MINUTES || 10),
   paymentProvider: razorpay.keyId && razorpay.keySecret ? 'razorpay' : 'mock',
   razorpay,

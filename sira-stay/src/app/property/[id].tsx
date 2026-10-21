@@ -2,7 +2,19 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { Alert, AppState, FlatList, Linking, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  AppState,
+  FlatList,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApproxMap } from '@/components/approx-map';
@@ -15,7 +27,8 @@ import { StatusBadge } from '@/components/status-badge';
 import { colors, radius } from '@/constants/theme';
 import { ApiError, api, mediaUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { formatDate, formatPhone, rupees } from '@/lib/format';
+import { districtLabel } from '@/lib/districts';
+import { formatDate, formatDateLong, formatPhone, hoursUntil, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { Checkout, Payment, PropertyDetail } from '@/lib/types';
 import { useQuery } from '@/lib/use-query';
@@ -24,8 +37,8 @@ export default function PropertyScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, lang, errorText } = useI18n();
   const { user } = useAuth();
-  const { data, error, loading, reload } = useQuery<{ property: PropertyDetail }>(`/properties/${id}`);
-  const [paying, setPaying] = useState(false);
+  const { data, error, loading, reload, setData } = useQuery<{ property: PropertyDetail }>(`/properties/${id}`);
+  const [busy, setBusy] = useState<'pay' | 'buyPass' | 'pass' | 'credit' | null>(null);
   const [ownerUnreachable, setOwnerUnreachable] = useState(false);
   const callStarted = useRef(false);
 
@@ -56,21 +69,37 @@ export default function PropertyScreen() {
   const p = data.property;
   const canBook = !p.isOwner && user?.role !== 'owner' && p.status !== 'WITHDRAWN';
 
-  async function unlock() {
-    setPaying(true);
+  /** ₹29 single unlock or ₹99 District Pass → Razorpay checkout; the server verifies the payment. */
+  async function pay(body: { purpose: 'unlock' | 'district_pass'; propertyId?: string; district?: string }, key: 'pay' | 'buyPass') {
+    setBusy(key);
     try {
-      const res = await api<{ payment: Payment; checkout: Checkout }>('/payments', { body: { purpose: 'unlock', propertyId: p.id } });
+      const res = await api<{ payment: Payment; checkout: Checkout }>('/payments', { body });
       router.push({
         pathname: '/checkout/[paymentId]',
-        params: { paymentId: res.payment.id, checkout: JSON.stringify(res.checkout), purpose: 'unlock', propertyId: p.id },
+        params: { paymentId: res.payment.id, checkout: JSON.stringify(res.checkout), purpose: body.purpose, propertyId: p.id },
       });
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'ALREADY_UNLOCKED') reload();
-      else Alert.alert(t('pay.failedTitle'), errorText(err));
+      if (!(err instanceof ApiError && err.code === 'ALREADY_UNLOCKED')) Alert.alert(t('pay.failedTitle'), errorText(err));
+      reload();
     } finally {
-      setPaying(false);
+      setBusy(null);
     }
   }
+
+  /** Unlock with a District Pass credit or a free unlock credit — no payment. */
+  async function unlockWith(method: 'pass' | 'credit') {
+    setBusy(method);
+    try {
+      setData(await api<{ property: PropertyDetail }>('/unlocks', { body: { propertyId: p.id, method } }));
+    } catch (err) {
+      Alert.alert(t('common.error'), errorText(err));
+      reload();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const options = p.unlockOptions;
 
   const owner = p.owner;
   const showUnavailable = Boolean(owner && !p.isOwner && (!owner.available || ownerUnreachable));
@@ -131,7 +160,7 @@ export default function PropertyScreen() {
           />
         </View>
 
-        {/* Owner contact: locked until the ₹9 unlock */}
+        {/* Owner contact: locked until unlocked (₹29, District Pass credit or free credit) for 6 months */}
         <View style={styles.section}>
           {p.isOwner ? (
             <Banner tone="info" icon="home">
@@ -140,6 +169,12 @@ export default function PropertyScreen() {
           ) : owner ? (
             <View style={styles.ownerCard}>
               <Text style={styles.sectionTitle}>{t('prop.ownerContact')}</Text>
+              {p.unlock && (
+                <View style={styles.unlockedTill}>
+                  <Ionicons name="lock-open" size={14} color={colors.success} />
+                  <Text style={styles.unlockedTillText}>{t('prop.unlockedTill', { date: formatDateLong(p.unlock.expiresAt, lang) })}</Text>
+                </View>
+              )}
               <View style={styles.ownerRow}>
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>{(owner.name ?? '?').charAt(0).toUpperCase()}</Text>
@@ -190,6 +225,20 @@ export default function PropertyScreen() {
                 small
                 onPress={openChat}
               />
+              {p.unlock?.canReport && (
+                <Button
+                  title={t('prop.reportWrong', { hours: hoursUntil(p.unlock.reportDeadline) })}
+                  icon="flag-outline"
+                  variant="ghost"
+                  small
+                  onPress={() =>
+                    router.push({
+                      pathname: '/unlock/[id]/report',
+                      params: { id: p.unlock!.id, method: p.unlock!.method, price: String(options.price) },
+                    })
+                  }
+                />
+              )}
             </View>
           ) : (
             <View style={styles.unlockCard}>
@@ -199,14 +248,72 @@ export default function PropertyScreen() {
                 </View>
                 <Text style={styles.unlockTitle}>{t('prop.unlockTitle')}</Text>
               </View>
-              <Text style={styles.unlockBody}>{t('prop.unlockBody')}</Text>
+              <Text style={styles.unlockBody}>{t('prop.unlockBody', { months: options.unlockMonths })}</Text>
               <View style={styles.masked}>
                 <Text style={styles.maskedText}>👤 ••••••••</Text>
                 <Text style={styles.maskedText}>📞 +91 ••••• •••••</Text>
                 <Text style={styles.maskedText}>💬 WhatsApp ••••• •••••</Text>
               </View>
-              {p.status !== 'WITHDRAWN' && <Button title={t('prop.unlockCta')} icon="lock-open" onPress={unlock} loading={paying} />}
-              <Text style={styles.policy}>{t('prop.refundPolicy')}</Text>
+              {p.status !== 'WITHDRAWN' &&
+                (options.pass ? (
+                  <>
+                    <Banner tone="success" icon="ticket-outline">
+                      {t('prop.passCovers', { district: districtLabel(options.pass.district, lang) })}
+                    </Banner>
+                    <Button
+                      title={t('prop.unlockWithPass', { n: options.pass.remainingCredits })}
+                      icon="ticket"
+                      onPress={() => unlockWith('pass')}
+                      loading={busy === 'pass'}
+                      disabled={busy !== null}
+                    />
+                  </>
+                ) : (
+                  <>
+                    {options.freeCredits > 0 && (
+                      <Button
+                        title={t('prop.unlockWithCredit', { n: options.freeCredits })}
+                        icon="gift-outline"
+                        onPress={() => unlockWith('credit')}
+                        loading={busy === 'credit'}
+                        disabled={busy !== null}
+                      />
+                    )}
+                    <Button
+                      title={t('prop.unlockCta', { price: rupees(options.price) })}
+                      icon="lock-open"
+                      variant={options.freeCredits > 0 ? 'outline' : 'primary'}
+                      onPress={() => pay({ purpose: 'unlock', propertyId: p.id }, 'pay')}
+                      loading={busy === 'pay'}
+                      disabled={busy !== null}
+                    />
+                    {options.district && (
+                      <Pressable
+                        style={({ pressed }) => [styles.passOffer, pressed && styles.passOfferPressed]}
+                        disabled={busy !== null}
+                        onPress={() => pay({ purpose: 'district_pass', district: options.district! }, 'buyPass')}
+                        accessibilityRole="button">
+                        <Ionicons name="ticket-outline" size={22} color={colors.primaryDark} />
+                        <View style={styles.flex}>
+                          <Text style={styles.passOfferTitle}>{t('prop.passOffer', { price: rupees(options.passPrice) })}</Text>
+                          <Text style={styles.passOfferBody}>
+                            {t('prop.passOfferBody', {
+                              credits: options.passCredits,
+                              district: districtLabel(options.district, lang),
+                              days: options.passDays,
+                            })}
+                          </Text>
+                        </View>
+                        {busy === 'buyPass' ? (
+                          <ActivityIndicator color={colors.primary} />
+                        ) : (
+                          <Ionicons name="chevron-forward" size={18} color={colors.primaryDark} />
+                        )}
+                      </Pressable>
+                    )}
+                  </>
+                ))}
+              <Text style={styles.policy}>{t('prop.refundPolicy', { hours: options.reportHours })}</Text>
             </View>
           )}
         </View>
@@ -369,6 +476,31 @@ const styles = StyleSheet.create({
   masked: { backgroundColor: colors.white, borderRadius: radius.md, padding: 12, gap: 6 },
   maskedText: { fontSize: 15, color: colors.textMuted, letterSpacing: 1 },
   policy: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
+  passOffer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.primary,
+    backgroundColor: colors.white,
+  },
+  passOfferPressed: { backgroundColor: colors.primarySoft },
+  passOfferTitle: { fontSize: 15, fontWeight: '800', color: colors.primaryDark },
+  passOfferBody: { fontSize: 13, color: colors.textMuted },
+  unlockedTill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.successSoft,
+  },
+  unlockedTillText: { fontSize: 13, fontWeight: '700', color: colors.success },
   ownerCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 12 },
   ownerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
