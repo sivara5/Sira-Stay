@@ -2,6 +2,7 @@ import { Router } from 'express';
 
 import { requireRegistered } from '../auth.js';
 import { all, one, run } from '../db.js';
+import { PHOTO_COLUMNS, photoView } from '../images.js';
 import { getPropertyOr404, hasContactAccess } from '../services.js';
 import { HttpError, newId, nowIso, requireString } from '../util.js';
 
@@ -51,12 +52,12 @@ conversationsRouter.get('/', requireRegistered, (req, res) => {
         t.tenant_id,
         req.user.id,
       ).n;
-      const cover = one('SELECT url FROM photos WHERE property_id = ? ORDER BY position LIMIT 1', property.id);
+      const cover = photoView(one(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? ORDER BY position LIMIT 1`, property.id));
       return {
         propertyId: property.id,
         tenantId: t.tenant_id,
         propertyTitle: property.title,
-        coverPhoto: cover?.url ?? null,
+        coverPhoto: cover?.card ?? null,
         otherName: other.name || (isOwner ? other.email.split('@')[0] : 'Owner'),
         lastMessage: toMessage(last, req.user.id),
         unread,

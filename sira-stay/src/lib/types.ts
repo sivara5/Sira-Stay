@@ -35,6 +35,19 @@ export type Me = {
 
 export type LatLng = { lat: number; lng: number };
 
+/** One photo in several sizes: `card` (~720px) for lists, `large` (~1440px) for the gallery. */
+export type PhotoView = {
+  id: string;
+  url: string;
+  kind: 'interior' | 'exterior';
+  card: string;
+  large: string;
+  /** Tiny blurred preview shown while the photo downloads. */
+  thumbhash: string | null;
+  /** Tiny low-quality image used as the preview when there's no thumbhash (demo photos). */
+  tiny: string | null;
+};
+
 export type PropertyCard = {
   id: string;
   category: Category;
@@ -47,7 +60,9 @@ export type PropertyCard = {
   area: string;
   landmark: string;
   approxLocation: LatLng & { radiusM: number };
+  /** Card-size main photo URL. */
   coverPhoto: string | null;
+  cover: PhotoView | null;
   photoCount: number;
   verified: boolean;
   availableFrom: string | null;
@@ -69,7 +84,7 @@ export type OwnerContact = { id?: string; name: string | null; phone: string; wh
 export type PropertyDetail = PropertyCard & {
   description: string;
   amenities: Amenity[];
-  photos: { id: string; url: string; kind: 'interior' | 'exterior' }[];
+  photos: PhotoView[];
   bookedPeriods: { moveInDate: string; endDate: string }[];
   unlockFee: number;
   unlock: Unlock | null;

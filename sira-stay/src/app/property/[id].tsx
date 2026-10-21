@@ -20,7 +20,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApproxMap } from '@/components/approx-map';
 import { Button } from '@/components/button';
 import { categoryIcon } from '@/components/category-tabs';
-import { Banner, ErrorView, Loading } from '@/components/feedback';
+import { Banner, ErrorView } from '@/components/feedback';
+import { SavedNote } from '@/components/network-banner';
+import { ProgressiveImage } from '@/components/progressive-image';
+import { PropertyDetailSkeleton } from '@/components/skeleton';
 import { FavoriteButton } from '@/components/favorite-button';
 import { RatingBadge } from '@/components/rating';
 import { StatusBadge } from '@/components/status-badge';
@@ -37,7 +40,7 @@ export default function PropertyScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, lang, errorText } = useI18n();
   const { user } = useAuth();
-  const { data, error, loading, reload, setData } = useQuery<{ property: PropertyDetail }>(`/properties/${id}`);
+  const { data, error, loading, reload, setData, savedAt } = useQuery<{ property: PropertyDetail }>(`/properties/${id}`);
   const [busy, setBusy] = useState<'pay' | 'buyPass' | 'pass' | 'credit' | null>(null);
   const [ownerUnreachable, setOwnerUnreachable] = useState(false);
   const callStarted = useRef(false);
@@ -64,7 +67,7 @@ export default function PropertyScreen() {
     return () => sub.remove();
   }, []);
 
-  if (loading && !data) return <Loading />;
+  if (loading && !data) return <PropertyDetailSkeleton />;
   if (!data) return <ErrorView error={error} onRetry={reload} />;
   const p = data.property;
   const canBook = !p.isOwner && user?.role !== 'owner' && p.status !== 'WITHDRAWN';
@@ -118,6 +121,7 @@ export default function PropertyScreen() {
         </View>
 
         <View style={styles.section}>
+          <SavedNote savedAt={savedAt} />
           <View style={styles.badges}>
             <View style={styles.categoryBadge}>
               <Ionicons name={categoryIcon[p.category]} size={14} color={colors.primaryDark} />
@@ -396,9 +400,16 @@ function PhotoCarousel({ photos }: { photos: PropertyDetail['photos'] }) {
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
         initialNumToRender={2}
         windowSize={3}
-        onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
-        renderItem={({ item }) => (
-          <Image source={{ uri: mediaUrl(item.url) }} style={{ width, height: width * 0.7 }} contentFit="cover" transition={150} />
+        onMomentumScrollEnd={(e) => {
+          const next = Math.round(e.nativeEvent.contentOffset.x / width);
+          setIndex(next);
+          // Fetch the next photo in the background so the following swipe is instant.
+          const upcoming = photos[next + 1];
+          if (upcoming) Image.prefetch(mediaUrl(upcoming.large) ?? '', { cachePolicy: 'memory-disk' }).catch(() => {});
+        }}
+        renderItem={({ item, index: i }) => (
+          // First 2 photos load first; the rest are mounted (and downloaded) only as you swipe.
+          <ProgressiveImage photo={item} size="large" priority={i < 2 ? 'high' : 'low'} style={{ width, height: width * 0.7 }} />
         )}
       />
       {photos[index] && (

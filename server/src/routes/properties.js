@@ -7,6 +7,7 @@ import { requireOwner, requireRegistered } from '../auth.js';
 import { config } from '../config.js';
 import { all, one, run, tx } from '../db.js';
 import { canonicalDistrict, districtSpellings } from '../districts.js';
+import { PHOTO_COLUMNS, deletePhotoFiles, photoView, queueVariants } from '../images.js';
 import { approximate, isInIndia } from '../geo.js';
 import {
   CATEGORIES,
@@ -82,18 +83,21 @@ function storePhotoFiles(propertyId, photos, kinds, startPosition) {
   });
 }
 
+/** Inserts photo rows and returns their ids (smaller versions are made afterwards in the background). */
 function insertPhotos(propertyId, stored, startPosition = 0) {
-  stored.forEach((p, i) =>
+  return stored.map((p, i) => {
+    const id = newId();
     run(
       'INSERT INTO photos (id, property_id, url, kind, sha256, position) VALUES (?, ?, ?, ?, ?, ?)',
-      newId(),
+      id,
       propertyId,
       p.url,
       p.kind,
       p.sha256,
       startPosition + i,
-    ),
-  );
+    );
+    return id;
+  });
 }
 
 propertiesRouter.get('/', (req, res) => {
@@ -200,7 +204,7 @@ propertiesRouter.post(
     const docPath = moveUpload(document, path.join(config.privateDir, 'documents'), `${id}-${docType}`, ['image', 'pdf']);
     const stored = storePhotoFiles(id, photos, kinds, 0);
 
-    tx(() => {
+    const photoIds = tx(() => {
       run(
         `INSERT INTO properties (id, owner_id, category, title, description, rent, deposit, booking_amount, furnishing,
            amenities, district, area, landmark, location_enc, approx_lat, approx_lng, doc_type, doc_file, verification,
@@ -228,8 +232,9 @@ propertiesRouter.post(
         availableFrom,
         nowIso(),
       );
-      insertPhotos(id, stored);
+      return insertPhotos(id, stored);
     });
+    queueVariants(photoIds);
     res.status(201).json({ property: toDetail(getPropertyOr404(id), req.user) });
   }),
 );
@@ -242,7 +247,8 @@ function ownProperty(req) {
   return property;
 }
 
-const listPhotos = (propertyId) => all('SELECT id, url, kind FROM photos WHERE property_id = ? ORDER BY position', propertyId);
+const listPhotos = (propertyId) =>
+  all(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? ORDER BY position`, propertyId).map(photoView);
 
 /** Adds photos to an existing listing (up to 20 in total), linked to that property. */
 propertiesRouter.post(
@@ -267,7 +273,7 @@ propertiesRouter.post(
 
     const start = existing.reduce((max, p) => Math.max(max, p.position + 1), 0);
     const stored = storePhotoFiles(property.id, photos, kinds, start);
-    tx(() => insertPhotos(property.id, stored, start));
+    queueVariants(tx(() => insertPhotos(property.id, stored, start)));
     res.status(201).json({ photos: listPhotos(property.id) });
   }),
 );
@@ -275,7 +281,7 @@ propertiesRouter.post(
 /** Removes a photo, keeping at least 3 with both an interior and an exterior view. */
 propertiesRouter.delete('/:id/photos/:photoId', requireOwner, (req, res) => {
   const property = ownProperty(req);
-  const photos = all('SELECT id, url, kind FROM photos WHERE property_id = ? ORDER BY position', property.id);
+  const photos = all(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? ORDER BY position`, property.id);
   const target = photos.find((p) => p.id === req.params.photoId);
   if (!target) throw new HttpError(404, 'NOT_FOUND', 'Photo not found.');
   const remaining = photos.filter((p) => p.id !== target.id);
@@ -289,9 +295,7 @@ propertiesRouter.delete('/:id/photos/:photoId', requireOwner, (req, res) => {
     run('DELETE FROM photos WHERE id = ?', target.id);
     remaining.forEach((p, position) => run('UPDATE photos SET position = ? WHERE id = ?', position, p.id));
   });
-  if (target.url.startsWith('/uploads/')) {
-    fs.rm(path.join(config.uploadDir, target.url.slice('/uploads/'.length)), { force: true }, () => {});
-  }
+  deletePhotoFiles(target);
   res.json({ photos: listPhotos(property.id) });
 });
 

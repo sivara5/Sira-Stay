@@ -1,10 +1,12 @@
 import os from 'node:os';
 
+import compression from 'compression';
 import express from 'express';
 import multer from 'multer';
 
 import { loadUser } from './auth.js';
 import { config } from './config.js';
+import { backfillVariants } from './images.js';
 import { authRouter, meRouter } from './routes/auth.js';
 import { bookingsRouter, myBookingsRouter } from './routes/bookings.js';
 import { conversationsRouter } from './routes/messages.js';
@@ -17,6 +19,7 @@ import { HttpError } from './util.js';
 
 const app = express();
 app.disable('x-powered-by');
+app.use(compression()); // gzip JSON — big savings on slow mobile networks
 
 // Webhooks need the raw body for signature checks, so mount before the JSON parser.
 app.use('/webhooks', webhookRouter);
@@ -29,7 +32,11 @@ app.use(
   express.static(config.uploadDir, {
     dotfiles: 'deny',
     index: false,
-    setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      // File names contain a content hash, so phones can keep them cached for good.
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
   }),
 );
 
@@ -82,6 +89,7 @@ app.use((err, _req, res, _next) => {
 });
 
 if (config.seedDemo) seedDemoData();
+backfillVariants();
 
 // Unreviewed wrong-details refunds turn into free unlock credits after 3 days (also checked on relevant requests).
 const settle = () => {

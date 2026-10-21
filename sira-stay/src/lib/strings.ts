@@ -11,12 +11,19 @@ export const en = {
   'common.ok': 'OK',
   'common.perMonth': '/month',
   'common.error': 'Something went wrong. Please try again.',
-  'common.networkError': "Can't reach the Sira Stay server. Make sure the server is running on your laptop and your phone is on the same Wi-Fi.",
+  'common.networkError': 'No internet connection. Check your mobile data or Wi-Fi and try again.',
   'common.devCode': 'Test mode — your code is {code}. Tap to fill.',
   'common.kmAway': '~{km} km away',
   'common.required': 'Required',
   'common.saved': 'Saved',
   'common.optional': 'optional',
+
+  // slow / offline network
+  'net.offline': 'No internet connection',
+  'net.server': "Can't reach Sira Stay right now",
+  'net.saved': 'Showing saved information',
+  'net.retry': 'Retry',
+  'net.savedAt': 'Saved {time}',
 
   // language
   'lang.title': 'Choose your language',
@@ -456,6 +463,10 @@ export const en = {
   'resolution.pass_credit': 'Pass credit returned',
   'resolution.credit_returned': 'Free credit returned',
   'pay.viewPass': 'View District Pass',
+  'pay.waitingTitle': 'Connection lost',
+  'pay.waitingMsg': "Don't pay again. We'll confirm your payment automatically as soon as you're back online.",
+  'pay.checkNow': 'Check now',
+  'pay.recoveredTitle': 'Payment confirmed',
 
   // server error codes (Tamil users get these instead of the English server message)
   'err.OTP_INVALID': 'Incorrect code. Please check and try again.',
@@ -492,6 +503,7 @@ export const en = {
   'err.REPORT_LIMIT': 'You can report wrong details at most 2 times a month.',
   'err.ADMIN_ONLY': 'Only Sira Stay admins can do this.',
   'err.REVIEW_CLOSED': 'This report has already been reviewed.',
+  'err.TIMEOUT': 'The network is slow. Please try again.',
 };
 
 export type StringKey = keyof typeof en;
@@ -508,12 +520,18 @@ export const ta: Record<StringKey, string> = {
   'common.ok': 'சரி',
   'common.perMonth': '/மாதம்',
   'common.error': 'ஏதோ தவறு நடந்துவிட்டது. மீண்டும் முயற்சிக்கவும்.',
-  'common.networkError': 'Sira Stay சர்வரை அணுக முடியவில்லை. லேப்டாப்பில் சர்வர் இயங்குகிறதா, உங்கள் போன் அதே Wi-Fi-ல் உள்ளதா எனச் சரிபார்க்கவும்.',
+  'common.networkError': 'இணைய இணைப்பு இல்லை. உங்கள் மொபைல் டேட்டா அல்லது Wi-Fi-ஐச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
   'common.devCode': 'சோதனை முறை — உங்கள் குறியீடு {code}. நிரப்ப தட்டவும்.',
   'common.kmAway': '~{km} கி.மீ தொலைவில்',
   'common.required': 'கட்டாயம்',
   'common.saved': 'சேமிக்கப்பட்டது',
   'common.optional': 'விருப்பத்தேர்வு',
+
+  'net.offline': 'இணைய இணைப்பு இல்லை',
+  'net.server': 'இப்போது Sira Stay-ஐ அணுக முடியவில்லை',
+  'net.saved': 'சேமித்த தகவல் காட்டப்படுகிறது',
+  'net.retry': 'மீண்டும் முயற்சி',
+  'net.savedAt': '{time} அன்று சேமித்தது',
 
   'lang.title': 'உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்',
   'lang.label': 'மொழி',
@@ -935,6 +953,10 @@ export const ta: Record<StringKey, string> = {
   'resolution.pass_credit': 'பாஸ் கிரெடிட் திருப்பித் தரப்பட்டது',
   'resolution.credit_returned': 'இலவச கிரெடிட் திருப்பித் தரப்பட்டது',
   'pay.viewPass': 'மாவட்ட பாஸைப் பார்',
+  'pay.waitingTitle': 'இணைப்பு துண்டிக்கப்பட்டது',
+  'pay.waitingMsg': 'மீண்டும் பணம் செலுத்த வேண்டாம். இணைப்பு திரும்பியவுடன் உங்கள் கட்டணத்தைத் தானாக உறுதிசெய்வோம்.',
+  'pay.checkNow': 'இப்போது சரிபார்',
+  'pay.recoveredTitle': 'கட்டணம் உறுதிசெய்யப்பட்டது',
 
   'err.OTP_INVALID': 'தவறான குறியீடு. சரிபார்த்து மீண்டும் முயற்சிக்கவும்.',
   'err.OTP_EXPIRED': 'இந்தக் குறியீடு காலாவதியானது. புதிய குறியீட்டைக் கோரவும்.',
@@ -970,4 +992,5 @@ export const ta: Record<StringKey, string> = {
   'err.REPORT_LIMIT': 'ஒரு மாதத்தில் அதிகபட்சம் 2 முறை மட்டுமே தவறான விவரங்களைப் புகாரளிக்க முடியும்.',
   'err.ADMIN_ONLY': 'Sira Stay நிர்வாகிகள் மட்டுமே இதைச் செய்ய முடியும்.',
   'err.REVIEW_CLOSED': 'இந்தப் புகார் ஏற்கனவே பரிசீலிக்கப்பட்டது.',
+  'err.TIMEOUT': 'இணையம் மெதுவாக உள்ளது. மீண்டும் முயற்சிக்கவும்.',
 };

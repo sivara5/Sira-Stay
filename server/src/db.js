@@ -8,6 +8,7 @@ export const db = new DatabaseSync(path.join(config.dataDir, 'sira.db'));
 db.exec(`
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 5000;
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -79,7 +80,10 @@ CREATE TABLE IF NOT EXISTS photos (
   url TEXT NOT NULL,
   kind TEXT NOT NULL,                           -- interior | exterior
   sha256 TEXT,
-  position INTEGER NOT NULL
+  position INTEGER NOT NULL,
+  card_url TEXT,                                -- ~720px version for cards ('' = could not be made)
+  large_url TEXT,                               -- ~1440px version for the gallery
+  thumbhash TEXT                                -- tiny blurred preview shown while loading
 );
 CREATE INDEX IF NOT EXISTS photos_property ON photos(property_id, position);
 
@@ -286,6 +290,11 @@ if (!hasColumn('unlocks', 'id')) {
       DROP TABLE unlocks_legacy;
     `),
   );
+}
+
+// Migration: smaller photo versions + blurred previews for slow networks.
+for (const column of ['card_url', 'large_url', 'thumbhash']) {
+  if (!hasColumn('photos', column)) db.exec(`ALTER TABLE photos ADD COLUMN ${column} TEXT`);
 }
 
 // Migration: admin review of "wrong details" money refunds.

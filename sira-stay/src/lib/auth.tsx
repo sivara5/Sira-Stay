@@ -3,9 +3,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { ApiError, api, setAuthToken } from './api';
 import { useI18n } from './i18n';
+import { clearOfflineCache, setCacheOwner } from './offline-cache';
+import { clearPendingPayments } from './pending-payments';
 import type { Language, Me } from './types';
 
 const TOKEN_KEY = 'sira.token';
+const ME_KEY = 'sira.me';
 
 type Auth = {
   ready: boolean;
@@ -27,28 +30,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     (async () => {
+      const token = await AsyncStorage.getItem(TOKEN_KEY).catch(() => null);
+      if (!token) {
+        setReady(true);
+        return;
+      }
+      setAuthToken(token);
+      // Start from the saved account right away, so the app opens (and works offline) without waiting.
+      const saved = await AsyncStorage.getItem(ME_KEY)
+        .then((raw) => (raw ? (JSON.parse(raw) as Me) : null))
+        .catch(() => null);
+      if (saved) {
+        setCacheOwner(saved.id);
+        setUserState(saved);
+        setReady(true);
+      }
       try {
-        const token = await AsyncStorage.getItem(TOKEN_KEY);
-        if (token) {
-          setAuthToken(token);
-          const { user: me } = await api<{ user: Me }>('/me');
-          setUserState(me);
-        }
+        const { user: me } = await api<{ user: Me }>('/me', saved ? { retries: 0 } : {});
+        setCacheOwner(me.id);
+        setUserState(me);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
+          // The session really ended — sign out on this phone.
           setAuthToken(null);
-          await AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
+          await AsyncStorage.multiRemove([TOKEN_KEY, ME_KEY]).catch(() => {});
+          setUserState(null);
         }
-        // Network errors: stay signed out for now; the user can retry from onboarding.
+        // Network errors: keep the saved account (offline mode).
       } finally {
         setReady(true);
       }
     })();
   }, []);
 
+  // Keep a copy of the signed-in account for offline starts, and separate saved data per account.
+  useEffect(() => {
+    if (!user) return;
+    setCacheOwner(user.id);
+    AsyncStorage.setItem(ME_KEY, JSON.stringify(user)).catch(() => {});
+  }, [user]);
+
   const signIn = useCallback(async (token: string, me: Me) => {
     setAuthToken(token);
     await AsyncStorage.setItem(TOKEN_KEY, token);
+    setCacheOwner(me.id); // before screens mount and read their saved data
     setUserState(me);
   }, []);
 
@@ -60,7 +85,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     await api('/auth/logout', { method: 'POST' }).catch(() => {});
     setAuthToken(null);
-    await AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
+    await AsyncStorage.multiRemove([TOKEN_KEY, ME_KEY]).catch(() => {});
+    await Promise.all([clearOfflineCache(), clearPendingPayments()]);
+    setCacheOwner(null);
     setUserState(null);
   }, []);
 

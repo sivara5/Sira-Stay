@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandLogo } from '@/components/brand-logo';
 import { Button } from '@/components/button';
@@ -39,6 +39,7 @@ export default function Profile() {
   // Admins get a badge: refunds waiting for review + unread report notifications.
   const { data: admin } = useQuery<AdminOverview>(user?.isAdmin ? '/admin/reports' : null, { pollMs: 60_000 });
   const adminBadge = admin ? admin.pending.length + admin.unreadNotifications : 0;
+  const insets = useSafeAreaInsets();
   if (!user) return null;
   const isOwner = user.role === 'owner';
   const showKyc = isOwner || user.kycStatus !== 'none';
@@ -80,7 +81,7 @@ export default function Profile() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={[styles.safe, { paddingTop: insets.top }]}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.brandRow}>
           <BrandLogo tagline={t('profile.tagline')} />
@@ -220,7 +221,7 @@ export default function Profile() {
 
         <Button title={t('profile.signOut')} variant="danger" icon="log-out-outline" onPress={signOut} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -7,8 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Banner, ErrorView, Loading } from '@/components/feedback';
+import { ProgressiveImage } from '@/components/progressive-image';
 import { colors, radius } from '@/constants/theme';
-import { api, filePart, mediaUrl } from '@/lib/api';
+import { api, filePart } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
 import { MAX_PHOTOS, MIN_PHOTOS, filterPicked, photoKey, type PhotoKind } from '@/lib/photo-rules';
 import { choosePhotos, imageMime, imageName, takePhoto, type PickedImage } from '@/lib/pick-image';
@@ -110,7 +111,7 @@ export default function ManagePhotos() {
               disabled={i === 0 || busy !== null}
               onPress={() => run(p.id, () => api(`/properties/${property.id}/photos/${p.id}/main`, { method: 'POST' }))}
               accessibilityLabel={i === 0 ? t('photos.main') : `${t(`photo.${p.kind}`)} ${i + 1}`}>
-              <Image source={{ uri: mediaUrl(p.url) }} style={[styles.thumb, busy === p.id && styles.thumbBusy]} contentFit="cover" />
+              <ProgressiveImage photo={p} style={[styles.thumb, busy === p.id && styles.thumbBusy]} />
               {i === 0 && (
                 <View style={styles.mainBadge}>
                   <Ionicons name="star" size={10} color={colors.white} />

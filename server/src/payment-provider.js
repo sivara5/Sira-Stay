@@ -37,6 +37,13 @@ export async function createProviderOrder(payment) {
   return (await res.json()).id;
 }
 
+/** Payments Razorpay has recorded for an order — used to confirm payments the app never reported back. */
+export async function fetchOrderPayments(orderId) {
+  const res = await fetch(`${RAZORPAY_API}/orders/${orderId}/payments`, { headers: razorpayHeaders() });
+  if (!res.ok) throw new Error(`Razorpay responded ${res.status}`);
+  return (await res.json()).items ?? [];
+}
+
 export function verifyCheckoutSignature(orderId, paymentId, signature) {
   const expected = crypto.createHmac('sha256', config.razorpay.keySecret).update(`${orderId}|${paymentId}`).digest('hex');
   return safeEqual(expected, signature);

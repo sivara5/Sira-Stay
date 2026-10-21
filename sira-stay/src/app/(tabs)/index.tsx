@@ -3,13 +3,15 @@ import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandLogo } from '@/components/brand-logo';
 import { CategoryButtons } from '@/components/category-tabs';
 import { Chip } from '@/components/chip';
-import { EmptyState, ErrorView, Loading } from '@/components/feedback';
+import { EmptyState, ErrorView } from '@/components/feedback';
+import { SavedNote } from '@/components/network-banner';
 import { PropertyCard } from '@/components/property-card';
+import { PropertyListSkeleton } from '@/components/skeleton';
 import { colors, radius } from '@/constants/theme';
 import { DEFAULT_DISTRICTS, DISTRICTS, districtLabel, searchTerm, type District } from '@/lib/districts';
 import { useI18n } from '@/lib/i18n';
@@ -37,7 +39,8 @@ export default function Home() {
     return `/properties?${params.toString()}`;
   }, [category, district, query]);
 
-  const { data, error, loading, refreshing, refresh, reload } = useQuery<{ properties: Card[] }>(path);
+  const { data, error, loading, refreshing, refresh, reload, savedAt } = useQuery<{ properties: Card[] }>(path);
+  const insets = useSafeAreaInsets();
   const { data: inbox } = useQuery<{ conversations: Conversation[] }>('/conversations', { pollMs: 15_000 });
   const unread = inbox?.conversations.reduce((sum, c) => sum + c.unread, 0) ?? 0;
   const properties = data?.properties ?? [];
@@ -116,16 +119,19 @@ export default function Home() {
         </Pressable>
 
         {data && (
-          <Text style={styles.results}>
-            {place ? t('home.resultsIn', { n: properties.length, place }) : t('home.results', { n: properties.length })}
-          </Text>
+          <View style={styles.resultsRow}>
+            <Text style={styles.results}>
+              {place ? t('home.resultsIn', { n: properties.length, place }) : t('home.results', { n: properties.length })}
+            </Text>
+            <SavedNote savedAt={savedAt} />
+          </View>
         )}
       </View>
     </View>
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={[styles.safe, { paddingTop: insets.top }]}>
       <FlatList
         data={properties}
         keyExtractor={(p) => p.id}
@@ -133,6 +139,11 @@ export default function Home() {
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        // Render a few cards at a time so photos load lazily while scrolling.
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        removeClippedSubviews
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
         renderItem={({ item }) => (
           <View style={styles.cardWrap}>
@@ -141,7 +152,7 @@ export default function Home() {
         )}
         ListEmptyComponent={
           loading && !data ? (
-            <Loading />
+            <PropertyListSkeleton />
           ) : error && !data ? (
             <ErrorView error={error} onRetry={reload} />
           ) : (
@@ -149,7 +160,7 @@ export default function Home() {
           )
         }
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -216,6 +227,7 @@ const styles = StyleSheet.create({
   },
   viewAllPressed: { backgroundColor: colors.primarySoft },
   viewAllText: { fontSize: 14, fontWeight: '800', color: colors.primary },
-  results: { fontSize: 15, fontWeight: '700', color: colors.textMuted, marginTop: 20, marginBottom: 12 },
+  resultsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 20, marginBottom: 12 },
+  results: { fontSize: 15, fontWeight: '700', color: colors.textMuted, flexShrink: 1 },
   cardWrap: { paddingHorizontal: 16, marginBottom: 16 },
 });

@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -6,10 +5,12 @@ import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } fr
 import { Button } from '@/components/button';
 import { DetailRow as Row } from '@/components/detail-row';
 import { Banner, ErrorView, Loading } from '@/components/feedback';
+import { SavedNote } from '@/components/network-banner';
+import { ProgressiveImage } from '@/components/progressive-image';
 import { ReviewCard } from '@/components/review-card';
 import { StatusBadge } from '@/components/status-badge';
 import { colors, radius } from '@/constants/theme';
-import { api, mediaUrl } from '@/lib/api';
+import { api } from '@/lib/api';
 import { formatDate, formatPhone, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { Booking, Checkout, Payment } from '@/lib/types';
@@ -18,7 +19,7 @@ import { useQuery } from '@/lib/use-query';
 export default function BookingDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, lang, errorText } = useI18n();
-  const { data, error, loading, refreshing, refresh, reload, setData } = useQuery<{ booking: Booking }>(`/bookings/${id}`);
+  const { data, error, loading, refreshing, refresh, reload, setData, savedAt } = useQuery<{ booking: Booking }>(`/bookings/${id}`);
   const [paying, setPaying] = useState(false);
 
   if (loading && !data) return <Loading />;
@@ -45,7 +46,8 @@ export default function BookingDetails() {
     <ScrollView
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}>
-      <Image source={{ uri: mediaUrl(b.property.coverPhoto) }} style={styles.cover} contentFit="cover" />
+      <SavedNote savedAt={savedAt} />
+      <ProgressiveImage uri={b.property.coverPhoto} style={styles.cover} />
       <View style={styles.titleBlock}>
         <StatusBadge status={b.status} />
         <Text style={styles.title}>{b.property.title}</Text>

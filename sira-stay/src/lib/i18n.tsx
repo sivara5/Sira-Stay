@@ -50,6 +50,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     (err: unknown) => {
       if (!(err instanceof ApiError)) return t('common.error');
       if (err.code === 'NETWORK') return t('common.networkError');
+      if (err.code === 'TIMEOUT') return t('err.TIMEOUT');
       const key = `err.${err.code}` as StringKey;
       // English users get the server's precise message (it can include dates/photo numbers).
       if (lang === 'ta' && key in ta) return ta[key];

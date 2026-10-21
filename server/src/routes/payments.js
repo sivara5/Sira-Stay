@@ -4,7 +4,7 @@ import { requireRegistered } from '../auth.js';
 import { config } from '../config.js';
 import { all, one, run } from '../db.js';
 import { canonicalDistrict } from '../districts.js';
-import { createProviderOrder, verifyCheckoutSignature, verifyWebhookSignature } from '../payment-provider.js';
+import { createProviderOrder, fetchOrderPayments, verifyCheckoutSignature, verifyWebhookSignature } from '../payment-provider.js';
 import { getPropertyOr404, markFailed, markPaid, refundPayment, toPayment } from '../services.js';
 import { activePassFor, activeUnlock, passSummary, settleOverdueReviews } from '../unlocks.js';
 import { HttpError, newId, nowIso } from '../util.js';
@@ -143,7 +143,28 @@ paymentsRouter.post('/', requireRegistered, async (req, res) => {
   });
 });
 
-paymentsRouter.get('/:id', requireRegistered, (req, res) => res.json(paymentResponse(ownPayment(req))));
+const lastReconcile = new Map();
+
+/**
+ * If the connection dropped before the app could send Razorpay's success callback, ask Razorpay
+ * directly (server-to-server, with the secret key) whether the order was paid. Throttled per payment.
+ */
+async function reconcile(payment) {
+  if (payment.provider !== 'razorpay' || !['created', 'failed'].includes(payment.status)) return payment;
+  if (Date.now() - Date.parse(payment.created_at) > 24 * 3_600_000) return payment;
+  if (Date.now() - (lastReconcile.get(payment.id) ?? 0) < 10_000) return payment;
+  if (lastReconcile.size > 1000) lastReconcile.clear();
+  lastReconcile.set(payment.id, Date.now());
+  try {
+    const captured = (await fetchOrderPayments(payment.provider_order_id)).find((p) => p.status === 'captured');
+    if (captured) return await markPaid(payment.id, captured.id);
+  } catch (err) {
+    console.warn(`[razorpay] could not re-check order ${payment.provider_order_id}: ${err.message}`);
+  }
+  return payment;
+}
+
+paymentsRouter.get('/:id', requireRegistered, async (req, res) => res.json(paymentResponse(await reconcile(ownPayment(req)))));
 
 /** Razorpay Checkout success callback — signature is verified server-side before anything is unlocked. */
 paymentsRouter.post('/:id/verify', requireRegistered, async (req, res) => {

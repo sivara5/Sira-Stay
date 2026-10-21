@@ -1,13 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { categoryIcon } from '@/components/category-tabs';
 import { FavoriteButton } from '@/components/favorite-button';
+import { ProgressiveImage } from '@/components/progressive-image';
 import { RatingBadge } from '@/components/rating';
 import { StatusBadge } from '@/components/status-badge';
 import { colors, radius, shadow } from '@/constants/theme';
-import { mediaUrl } from '@/lib/api';
 import { formatDate, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { PropertyCard as Card } from '@/lib/types';
@@ -23,7 +22,7 @@ export function PropertyCard({ property, onPress, onFavoriteChange }: Props) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
       <View>
-        <Image source={{ uri: mediaUrl(property.coverPhoto) }} style={styles.image} contentFit="cover" transition={200} />
+        <ProgressiveImage photo={property.cover} uri={property.coverPhoto} style={styles.image} />
         {property.status !== 'AVAILABLE' && (
           <View style={styles.status}>
             <StatusBadge status={property.status} />

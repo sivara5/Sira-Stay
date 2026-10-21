@@ -1,13 +1,13 @@
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { DetailRow as Row } from '@/components/detail-row';
 import { EmptyState, ErrorView, Loading } from '@/components/feedback';
+import { SavedNote } from '@/components/network-banner';
+import { ProgressiveImage } from '@/components/progressive-image';
 import { StatusBadge } from '@/components/status-badge';
 import { colors, radius, shadow } from '@/constants/theme';
-import { mediaUrl } from '@/lib/api';
 import { formatDate, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { Booking } from '@/lib/types';
@@ -15,7 +15,7 @@ import { useQuery } from '@/lib/use-query';
 
 export default function MyBookings() {
   const { t } = useI18n();
-  const { data, error, loading, refreshing, refresh, reload } = useQuery<{ bookings: Booking[] }>('/my/bookings');
+  const { data, error, loading, refreshing, refresh, reload, savedAt } = useQuery<{ bookings: Booking[] }>('/my/bookings');
 
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorView error={error} onRetry={reload} />;
@@ -26,6 +26,7 @@ export default function MyBookings() {
       keyExtractor={(b) => b.id}
       contentContainerStyle={styles.list}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
+      ListHeaderComponent={savedAt ? <SavedNote savedAt={savedAt} /> : null}
       renderItem={({ item }) => <BookingCard booking={item} />}
       ListEmptyComponent={
         <EmptyState
@@ -44,7 +45,7 @@ function BookingCard({ booking: b }: { booking: Booking }) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Image source={{ uri: mediaUrl(b.property.coverPhoto) }} style={styles.cover} contentFit="cover" />
+        <ProgressiveImage uri={b.property.coverPhoto} style={styles.cover} />
         <View style={styles.headerText}>
           <Text style={styles.title} numberOfLines={2}>
             {b.property.title}

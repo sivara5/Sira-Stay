@@ -103,6 +103,7 @@ The server never trusts the app's "payment successful" message. Nothing is unloc
 3. Restart the API. `GET /health` should show `"paymentProvider":"razorpay"`.
 4. In the app, pay ₹29 or ₹99. In Razorpay's test checkout, use UPI ID `success@razorpay` (or `failure@razorpay` to test a failure), or a [test card](https://razorpay.com/docs/payments/payments/test-card-details/).
 5. Optional webhook: add `https://<your-api>/webhooks/razorpay` (events `payment.captured`, `payment.failed`) and put its secret in `RAZORPAY_WEBHOOK_SECRET`.
+6. Keep **automatic capture** on (Razorpay's default: *Account & Settings → Capture settings*). Payments interrupted by the network are recovered by looking for a *captured* payment on the order.
 
 Without keys, the app uses the built-in test checkout instead of Razorpay.
 
@@ -127,6 +128,27 @@ Without keys, the app uses the built-in test checkout instead of Razorpay.
 | Other users can't book the same dates | Server-side overlap check + 10-minute payment hold |
 | View Booking Details / View on Map / Open Map | `booking/[id]/index.tsx`, `booking/[id]/map.tsx` |
 | Booking and payment status kept in sync | The server decides every status. The app refetches whenever a screen comes into focus. A Razorpay webhook covers payments completed after the app closes. |
+| Works on slow and offline networks | See *Slow and offline networks* below |
+
+## Slow and offline networks
+
+Built for patchy rural connections. All new messages are in English and Tamil and follow the selected language.
+
+- **Skeleton screens:** while data loads, screens show grey shimmer placeholders shaped like property cards, the property page or a list, instead of a blank screen (`components/skeleton.tsx`).
+- **Photos load progressively:**
+  - The server makes smaller copies of every uploaded photo with `sharp`: a card size (720 px, about 25 KB instead of 2–3 MB) and a gallery size (1440 px), plus a tiny blurred preview (thumbhash). Older photos are converted once in the background when the server starts.
+  - Cards show the blurred preview at once, then fade in the card-size photo.
+  - In the gallery, the first 2 photos load first. The rest load only as you swipe, and the next photo is fetched just ahead of you.
+  - Photos are kept on the phone (`expo-image`, memory + disk cache) and served with long-lived cache headers.
+- **Saved for offline:** the last property lists, viewed properties (including an unlocked contact), Favorites, My Bookings and booking details are saved on the phone (`lib/offline-cache.ts`). They show immediately, with a small "Saved {time}" note when they couldn't be refreshed. Each account's saved data is kept separate and deleted on sign-out. The app also opens offline for an already signed-in user.
+- **"No internet connection" banner** at the top, with a **Retry** button. It also shows "Can't reach Sira Stay right now" when the phone is online but the server doesn't answer. Screens reload by themselves when the connection returns.
+- **Timeouts and automatic retry:** requests stop after 15 s (reads), 30 s (actions) or 120 s (photo uploads). Reads are retried automatically twice (after 1 s and 3 s). JSON responses are gzip-compressed.
+- **Payments interrupted by the network:**
+  - The checkout screen switches to *"Connection lost — don't pay again"*. It re-checks the payment when the connection returns, every 15 s, or when you tap *Check now*.
+  - If you leave the screen or close the app, the payment is remembered on the phone and re-checked on the next launch, when the app comes back to the foreground, or on reconnect. You get a *"Payment confirmed"* message once it's done.
+  - On the server, a status check for an unconfirmed Razorpay payment asks Razorpay directly (`GET /orders/:id/payments`, using the secret key), so a payment whose confirmation never reached the server is still confirmed exactly once.
+
+**Try it over USB:** run `adb reverse --remove tcp:4000` to cut the phone off from the API. The banner and the saved screens appear. Run `adb reverse tcp:4000 tcp:4000` again and the screens refresh by themselves.
 
 ## Privacy and security
 
@@ -155,3 +177,4 @@ Without keys, the app uses the built-in test checkout instead of Razorpay.
 2. `sira-stay` கோப்புறையில் `npm install` பின்னர் `npm start` இயக்கவும்.
 3. உங்கள் போனில் Expo Go ஆப்பைத் திறந்து QR குறியீட்டை ஸ்கேன் செய்யவும். போனும் லேப்டாப்பும் ஒரே Wi-Fi-ல் இருக்க வேண்டும்.
 4. சோதனை முறையில் OTP குறியீடுகள் ஆப்பில் மஞ்சள் பெட்டியில் காட்டப்படும்; கட்டணங்கள் உண்மையான பணம் இல்லாமல் சோதிக்கப்படும்.
+5. இணையம் இல்லாதபோது மேலே "இணைய இணைப்பு இல்லை" பட்டியும் "மீண்டும் முயற்சி" பொத்தானும் தோன்றும். கடைசியாகப் பார்த்த வீடுகள், பிடித்தவை, முன்பதிவுகள் சேமிக்கப்பட்டு ஆஃப்லைனிலும் காட்டப்படும். கட்டணத்தின் நடுவில் இணைப்பு துண்டிக்கப்பட்டால், இணைப்பு திரும்பியவுடன் கட்டண நிலை தானாகச் சரிபார்க்கப்படும் — மீண்டும் பணம் செலுத்த வேண்டாம்.

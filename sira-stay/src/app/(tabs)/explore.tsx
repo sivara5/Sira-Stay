@@ -4,13 +4,15 @@ import { router } from 'expo-router';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AreaCircle } from '@/components/approx-map';
 import { CategoryTabs } from '@/components/category-tabs';
 import { Chip } from '@/components/chip';
-import { Banner, EmptyState, ErrorView, Loading } from '@/components/feedback';
+import { Banner, EmptyState, ErrorView } from '@/components/feedback';
+import { SavedNote } from '@/components/network-banner';
 import { PropertyCard } from '@/components/property-card';
+import { PropertyListSkeleton } from '@/components/skeleton';
 import { TAMIL_NADU_REGION, colors, radius } from '@/constants/theme';
 import { rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
@@ -46,7 +48,8 @@ export default function Explore() {
     return `/properties?${params.toString()}`;
   }, [category, sort, query, origin]);
 
-  const { data, error, loading, refreshing, refresh, reload } = useQuery<{ properties: Card[] }>(path);
+  const { data, error, loading, refreshing, refresh, reload, savedAt } = useQuery<{ properties: Card[] }>(path);
+  const insets = useSafeAreaInsets();
   const properties = data?.properties ?? [];
 
   async function chooseSort(next: Sort) {
@@ -89,7 +92,7 @@ export default function Explore() {
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <View style={[styles.safe, { paddingTop: insets.top }]}>
       {header}
       <View style={styles.tabs}>
         <CategoryTabs value={category} onChange={setCategory} />
@@ -117,8 +120,14 @@ export default function Explore() {
         </View>
       )}
 
+      {savedAt && (
+        <View style={styles.bannerWrap}>
+          <SavedNote savedAt={savedAt} />
+        </View>
+      )}
+
       {loading && !data ? (
-        <Loading />
+        <PropertyListSkeleton />
       ) : error && !data ? (
         <ErrorView error={error} onRetry={reload} />
       ) : view === 'map' ? (
@@ -128,6 +137,10 @@ export default function Explore() {
           data={properties}
           keyExtractor={(p) => p.id}
           contentContainerStyle={styles.list}
+          initialNumToRender={3}
+          maxToRenderPerBatch={3}
+          windowSize={5}
+          removeClippedSubviews
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}
           renderItem={({ item }) => <PropertyCard property={item} onPress={() => router.push(`/property/${item.id}`)} />}
           ListEmptyComponent={
@@ -135,7 +148,7 @@ export default function Explore() {
           }
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 

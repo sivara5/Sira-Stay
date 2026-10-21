@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
@@ -8,32 +8,61 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { Button } from '@/components/button';
 import { Banner } from '@/components/feedback';
 import { colors, radius } from '@/constants/theme';
-import { api } from '@/lib/api';
+import { api, isConnectionError } from '@/lib/api';
 import { districtLabel } from '@/lib/districts';
 import { formatDateLong, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
+import { onReconnect, onRetry } from '@/lib/network';
+import { addPendingPayment, removePendingPayment, setActiveCheckout } from '@/lib/pending-payments';
 import type { Checkout, PaymentResult } from '@/lib/types';
 
-type Phase = 'ready' | 'processing' | 'success' | 'failed' | 'refunded';
+type Phase = 'ready' | 'processing' | 'waiting' | 'success' | 'failed' | 'refunded';
 type Params = { paymentId: string; checkout: string; purpose: 'unlock' | 'booking' | 'district_pass'; propertyId: string; bookingId?: string };
+
+const RECHECK_MS = 15_000;
 
 export default function CheckoutScreen() {
   const params = useLocalSearchParams<Params>();
   const { t, lang, errorText } = useI18n();
   const checkout = useMemo(() => JSON.parse(params.checkout) as Checkout, [params.checkout]);
+  const isRazorpay = checkout.provider === 'razorpay';
   const [phase, setPhase] = useState<Phase>('ready');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PaymentResult | null>(null);
+  const [checking, setChecking] = useState(false);
   const amount = rupees(checkout.amount / 100);
+
+  /** Remember the payment until its result is known, so it's re-checked even if the app is closed. */
+  const track = () =>
+    addPendingPayment({
+      paymentId: params.paymentId,
+      purpose: params.purpose,
+      propertyId: params.propertyId,
+      bookingId: params.bookingId,
+      startedAt: Date.now(),
+    });
+
+  // Razorpay can finish in another app (UPI), so track it from the moment checkout opens.
+  const trackOnOpen = useEffectEvent(() => {
+    if (isRazorpay) track();
+  });
+  useEffect(() => {
+    setActiveCheckout(params.paymentId);
+    trackOnOpen();
+    return () => setActiveCheckout(null); // anything still unknown is picked up by PaymentRecovery
+  }, [params.paymentId]);
 
   /** The server is the source of truth — only its answer decides success. */
   function applyResult(next: PaymentResult) {
     setResult(next);
     const { payment } = next;
+    if (payment.status !== 'created') removePendingPayment(params.paymentId);
     if (payment.status !== 'paid') return setPhase('failed');
     if (payment.purpose === 'booking' && next.bookingStatus !== 'CONFIRMED') return setPhase('refunded');
     setPhase('success');
   }
+
+  const fetchStatus = () => api<PaymentResult>(`/payments/${params.paymentId}`, { retries: 0 });
 
   async function settle(request: () => Promise<PaymentResult>) {
     setPhase('processing');
@@ -41,24 +70,59 @@ export default function CheckoutScreen() {
     try {
       applyResult(await request());
     } catch (err) {
-      // Network hiccup after paying: ask the server for the latest status before giving up.
-      try {
-        applyResult(await api<PaymentResult>(`/payments/${params.paymentId}`));
-      } catch {
-        setError(errorText(err));
-        setPhase('failed');
-      }
+      // The answer may have been lost on the way back: ask the server before giving up.
+      const latest = await fetchStatus().catch(() => null);
+      if (latest && latest.payment.status !== 'created') return applyResult(latest);
+      // Network dropped mid-payment — don't let the user pay twice; wait and re-check instead.
+      if (isConnectionError(err) && (isRazorpay || !latest)) return setPhase('waiting');
+      if (!isRazorpay) removePendingPayment(params.paymentId);
+      setError(errorText(err));
+      setPhase('failed');
     }
   }
 
-  const mockPay = (outcome: 'success' | 'failure') =>
+  async function recheck() {
+    setChecking(true);
+    try {
+      const latest = await fetchStatus();
+      if (latest.payment.status !== 'created') applyResult(latest);
+      else if (!isRazorpay) {
+        // The test payment never reached the server, so nothing was charged: let the user pay again.
+        removePendingPayment(params.paymentId);
+        setPhase('ready');
+      }
+    } catch {
+      // Still offline — keep waiting.
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  const onRecheckTick = useEffectEvent(() => recheck());
+  useEffect(() => {
+    if (phase !== 'waiting') return undefined;
+    const stopReconnect = onReconnect(() => onRecheckTick());
+    const stopRetry = onRetry(() => onRecheckTick());
+    const timer = setInterval(() => onRecheckTick(), RECHECK_MS);
+    return () => {
+      stopReconnect();
+      stopRetry();
+      clearInterval(timer);
+    };
+  }, [phase]);
+
+  async function mockPay(outcome: 'success' | 'failure') {
+    setPhase('processing');
+    await track();
     settle(() => api<PaymentResult>(`/payments/${params.paymentId}/mock`, { body: { outcome } }));
+  }
 
   function onRazorpayMessage(event: WebViewMessageEvent) {
     const msg = JSON.parse(event.nativeEvent.data) as { type: 'success' | 'dismiss' | 'failed'; data?: Record<string, string> };
     if (msg.type === 'success') {
       settle(() => api<PaymentResult>(`/payments/${params.paymentId}/verify`, { body: msg.data }));
     } else if (msg.type === 'dismiss') {
+      // Stays tracked: if a UPI payment still completes, PaymentRecovery confirms it; otherwise it's dropped as failed.
       api(`/payments/${params.paymentId}/cancel`, { method: 'POST' }).catch(() => {});
       router.back();
     }
@@ -122,6 +186,12 @@ export default function CheckoutScreen() {
         )}
         {phase === 'refunded' && <Result icon="refresh-circle" color={colors.accent} title={t('pay.refundedTitle')} body={t('pay.refundedMsg')} />}
         {phase === 'failed' && <Result icon="close-circle" color={colors.danger} title={t('pay.failedTitle')} body={error ?? t('pay.failedMsg')} />}
+        {phase === 'waiting' && (
+          <>
+            <Result icon="cloud-offline-outline" color={colors.accent} title={t('pay.waitingTitle')} body={t('pay.waitingMsg')} />
+            <ActivityIndicator color={colors.primary} />
+          </>
+        )}
 
         {phase === 'ready' && (
           <View style={styles.card}>
@@ -174,17 +244,31 @@ export default function CheckoutScreen() {
         )}
         {phase === 'failed' && (
           <>
-            <Button title={t('common.retry')} onPress={() => setPhase('ready')} />
+            <Button
+              title={t('common.retry')}
+              onPress={() => {
+                if (isRazorpay) track();
+                setPhase('ready');
+              }}
+            />
             <Button title={t('common.back')} variant="outline" onPress={() => router.back()} />
           </>
         )}
         {phase === 'refunded' && <Button title={t('common.back')} variant="outline" onPress={() => router.back()} />}
+        {phase === 'waiting' && (
+          <>
+            <Button title={t('pay.checkNow')} icon="refresh" onPress={recheck} loading={checking} />
+            <Button title={t('common.back')} variant="outline" onPress={() => router.back()} />
+          </>
+        )}
       </View>
     </SafeAreaView>
   );
 }
 
-function Result({ icon, color, title, body }: { icon: 'checkmark-circle' | 'close-circle' | 'refresh-circle'; color: string; title: string; body: string }) {
+type ResultIcon = 'checkmark-circle' | 'close-circle' | 'refresh-circle' | 'cloud-offline-outline';
+
+function Result({ icon, color, title, body }: { icon: ResultIcon; color: string; title: string; body: string }) {
   return (
     <View style={styles.center}>
       <Ionicons name={icon} size={84} color={color} />

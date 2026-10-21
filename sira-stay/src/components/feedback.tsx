@@ -1,19 +1,17 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ComponentProps, ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/button';
+import { ListSkeleton } from '@/components/skeleton';
 import { colors, radius } from '@/constants/theme';
 import { useI18n } from '@/lib/i18n';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
+/** Placeholder while a screen loads: shimmering rows instead of a spinner or blank screen. */
 export function Loading() {
-  return (
-    <View style={styles.center}>
-      <ActivityIndicator size="large" color={colors.primary} />
-    </View>
-  );
+  return <ListSkeleton />;
 }
 
 export function EmptyState({ icon, title, hint, action }: { icon: IconName; title: string; hint?: string; action?: ReactNode }) {
@@ -75,7 +73,6 @@ export function DevCodeBanner({ code, onUse }: { code?: string; onUse: (code: st
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   empty: { alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
   emptyIcon: {
     width: 72,

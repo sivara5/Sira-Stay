@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { all, one, run, tx } from './db.js';
 import { APPROX_RADIUS_M, haversineKm, publicDistanceKm } from './geo.js';
+import { PHOTO_COLUMNS, photoView } from './images.js';
 import { refundProviderPayment } from './payment-provider.js';
 import { activePassFor, activeUnlock, createPass, grantUnlock, toUnlock, unlockOptions } from './unlocks.js';
 import { HttpError, decryptJson, nowIso, todayIST } from './util.js';
@@ -69,7 +70,7 @@ export function propertyRating(propertyId) {
 
 /** Public card. Never includes the street address, exact coordinates or owner contact. */
 export function toCard(property, { user, origin } = {}) {
-  const cover = one('SELECT url FROM photos WHERE property_id = ? ORDER BY position LIMIT 1', property.id);
+  const cover = photoView(one(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? ORDER BY position LIMIT 1`, property.id));
   const { n: photoCount } = one('SELECT COUNT(*) AS n FROM photos WHERE property_id = ?', property.id);
   const favorite = user
     ? Boolean(one('SELECT 1 AS ok FROM favorites WHERE user_id = ? AND property_id = ?', user.id, property.id))
@@ -86,7 +87,8 @@ export function toCard(property, { user, origin } = {}) {
     area: property.area,
     landmark: property.landmark,
     approxLocation: { lat: property.approx_lat, lng: property.approx_lng, radiusM: APPROX_RADIUS_M },
-    coverPhoto: cover?.url ?? null,
+    coverPhoto: cover?.card ?? null, // card-size version — much smaller download than the original
+    cover,
     photoCount,
     verified: property.verification === 'verified',
     availableFrom: property.available_from,
@@ -108,7 +110,7 @@ export function toDetail(property, user) {
     ...card,
     description: property.description,
     amenities: JSON.parse(property.amenities),
-    photos: all('SELECT id, url, kind FROM photos WHERE property_id = ? ORDER BY position', property.id),
+    photos: all(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? ORDER BY position`, property.id).map(photoView),
     bookedPeriods: bookedPeriods(property.id),
     unlockFee: config.unlockFeePaise / 100,
     unlock: null,
