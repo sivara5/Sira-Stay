@@ -14,7 +14,8 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatPhone } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import type { Me, Role } from '@/lib/types';
+import type { AdminOverview, Me, Role } from '@/lib/types';
+import { useQuery } from '@/lib/use-query';
 
 const ROLES = [
   { role: 'tenant', icon: 'home', label: 'profile.tenant', hint: 'profile.tenantHint', dashboard: '/' },
@@ -35,6 +36,9 @@ export default function Profile() {
   const [whatsapp, setWhatsapp] = useState(user?.whatsapp?.replace(/^\+91/, '') ?? '');
   const [saving, setSaving] = useState(false);
   const [switchingTo, setSwitchingTo] = useState<Role | null>(null);
+  // Admins get a badge: refunds waiting for review + unread report notifications.
+  const { data: admin } = useQuery<AdminOverview>(user?.isAdmin ? '/admin/reports' : null, { pollMs: 60_000 });
+  const adminBadge = admin ? admin.pending.length + admin.unreadNotifications : 0;
   if (!user) return null;
   const isOwner = user.role === 'owner';
   const showKyc = isOwner || user.kycStatus !== 'none';
@@ -183,6 +187,19 @@ export default function Profile() {
           </View>
         )}
 
+        {user.isAdmin && (
+          <Pressable style={[styles.linkRow, styles.adminRow]} onPress={() => router.push('/admin/reports')}>
+            <Ionicons name="shield-half-outline" size={20} color={colors.primaryDark} />
+            <Text style={[styles.label, styles.flex]}>{t('admin.open')}</Text>
+            {adminBadge > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{adminBadge > 99 ? '99+' : adminBadge}</Text>
+              </View>
+            )}
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Pressable>
+        )}
+
         <Pressable style={styles.linkRow} onPress={() => router.push('/district-pass')}>
           <Ionicons name="ticket-outline" size={20} color={colors.text} />
           <Text style={[styles.label, styles.flex]}>{t('pass.title')}</Text>
@@ -266,4 +283,15 @@ const styles = StyleSheet.create({
   label: { fontSize: 15, fontWeight: '600', color: colors.text },
   switchRow: { flexDirection: 'row', alignItems: 'center' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.white, borderRadius: radius.lg, padding: 16 },
+  adminRow: { borderWidth: 1.5, borderColor: colors.primary },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: { color: colors.white, fontSize: 12, fontWeight: '800' },
 });

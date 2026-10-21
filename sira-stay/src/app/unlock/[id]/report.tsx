@@ -16,9 +16,13 @@ import type { StringKey } from '@/lib/strings';
 import type { ReportReason, Unlock } from '@/lib/types';
 
 const REASONS: ReportReason[] = ['wrong_number', 'not_reachable', 'not_owner', 'not_available', 'other'];
-type Outcome = 'refund' | 'credit' | 'pass_credit' | 'credit_returned';
+type Outcome = 'refund_pending' | 'credit' | 'pass_credit' | 'credit_returned';
+const REPORTS_PER_MONTH = 2;
 
-/** "Report Wrong Details" within 48 hours: refund or free credit for ₹29, credit back for pass/credit unlocks. */
+/**
+ * "Report Wrong Details" within 48 hours (max 2 a month). ₹29 unlocks: free credit right away, or a
+ * money refund reviewed by Sira Stay. Pass/credit unlocks get their credit back.
+ */
 export default function ReportWrongDetails() {
   const { id, method, price } = useLocalSearchParams<{ id: string; method: Unlock['method']; price: string }>();
   const { t, errorText } = useI18n();
@@ -62,6 +66,9 @@ export default function ReportWrongDetails() {
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.hint}>{t('report.hint')}</Text>
+        <Banner tone="warning" icon="information-circle-outline">
+          {t('report.limitNote', { n: REPORTS_PER_MONTH })}
+        </Banner>
 
         <Text style={styles.label}>{t('report.reason')}</Text>
         <View style={styles.chips}>

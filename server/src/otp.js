@@ -1,9 +1,8 @@
 import crypto from 'node:crypto';
 
-import nodemailer from 'nodemailer';
-
 import { config } from './config.js';
 import { all, one, run } from './db.js';
+import { sendMail } from './mailer.js';
 import { HttpError, hmac, safeEqual } from './util.js';
 
 const TTL_MS = 10 * 60 * 1000;
@@ -11,22 +10,12 @@ const COOLDOWN_MS = 30 * 1000;
 const MAX_PER_HOUR = 6;
 const MAX_ATTEMPTS = 5;
 
-let mailer;
-async function deliverEmail(email, code) {
-  if (config.emailProvider !== 'smtp') return false;
-  mailer ??= nodemailer.createTransport({
-    host: config.smtp.host,
-    port: config.smtp.port,
-    secure: config.smtp.port === 465,
-    auth: { user: config.smtp.user, pass: config.smtp.pass },
-  });
-  await mailer.sendMail({
-    from: `Sira Stay <${config.smtp.from}>`,
+function deliverEmail(email, code) {
+  return sendMail({
     to: email,
     subject: `${code} is your Sira Stay verification code`,
     text: `Your Sira Stay verification code is ${code}. It expires in 10 minutes.\n\nஉங்கள் Sira Stay சரிபார்ப்புக் குறியீடு: ${code}`,
   });
-  return true;
 }
 
 async function deliverSms(phone, code) {

@@ -57,6 +57,7 @@ export function hasContactAccess(user, property) {
 
 export function propertyStatus(property) {
   if (property.status === 'withdrawn') return { status: 'WITHDRAWN' };
+  if (property.status === 'hidden') return { status: 'HIDDEN' }; // reported by 3+ tenants, awaiting admin
   const [next] = bookedPeriods(property.id);
   return next ? { status: 'BOOKED', bookedFrom: next.moveInDate, bookedUntil: next.endDate } : { status: 'AVAILABLE' };
 }

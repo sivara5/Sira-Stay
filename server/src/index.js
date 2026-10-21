@@ -10,7 +10,8 @@ import { bookingsRouter, myBookingsRouter } from './routes/bookings.js';
 import { conversationsRouter } from './routes/messages.js';
 import { myPaymentsRouter, paymentsRouter, webhookRouter } from './routes/payments.js';
 import { MAX_PHOTOS, myFavoritesRouter, myPropertiesRouter, propertiesRouter } from './routes/properties.js';
-import { myPassesRouter, unlocksRouter } from './routes/unlocks.js';
+import { adminRouter, myPassesRouter, unlocksRouter } from './routes/unlocks.js';
+import { settleOverdueReviews } from './unlocks.js';
 import { seedDemoData } from './seed.js';
 import { HttpError } from './util.js';
 
@@ -50,6 +51,7 @@ app.use('/my/properties', myPropertiesRouter);
 app.use('/my/favorites', myFavoritesRouter);
 app.use('/unlocks', unlocksRouter);
 app.use('/my/district-passes', myPassesRouter);
+app.use('/admin', adminRouter);
 app.use('/bookings', bookingsRouter);
 app.use('/my/bookings', myBookingsRouter);
 app.use('/payments', paymentsRouter);
@@ -80,6 +82,17 @@ app.use((err, _req, res, _next) => {
 });
 
 if (config.seedDemo) seedDemoData();
+
+// Unreviewed wrong-details refunds turn into free unlock credits after 3 days (also checked on relevant requests).
+const settle = () => {
+  try {
+    settleOverdueReviews();
+  } catch (err) {
+    console.error('[reviews] settle failed', err);
+  }
+};
+settle();
+setInterval(settle, 10 * 60 * 1000).unref();
 
 app.listen(config.port, '0.0.0.0', () => {
   const lan = Object.values(os.networkInterfaces())

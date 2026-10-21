@@ -6,7 +6,7 @@ import { all, one, run } from '../db.js';
 import { canonicalDistrict } from '../districts.js';
 import { createProviderOrder, verifyCheckoutSignature, verifyWebhookSignature } from '../payment-provider.js';
 import { getPropertyOr404, markFailed, markPaid, refundPayment, toPayment } from '../services.js';
-import { activePassFor, activeUnlock, passSummary } from '../unlocks.js';
+import { activePassFor, activeUnlock, passSummary, settleOverdueReviews } from '../unlocks.js';
 import { HttpError, newId, nowIso } from '../util.js';
 
 export const paymentsRouter = Router();
@@ -218,6 +218,7 @@ paymentsRouter.post('/:id/refund-request', requireRegistered, async (req, res) =
 export const myPaymentsRouter = Router();
 
 myPaymentsRouter.get('/', requireRegistered, (req, res) => {
+  settleOverdueReviews();
   const rows = all(
     `SELECT p.*, pr.title AS property_title, pr.status AS property_status FROM payments p
        LEFT JOIN properties pr ON pr.id = p.property_id

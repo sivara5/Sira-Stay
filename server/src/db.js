@@ -121,7 +121,21 @@ CREATE TABLE IF NOT EXISTS unlocks (
   status TEXT NOT NULL DEFAULT 'active',        -- active | reported
   reported_at TEXT,
   report_reason TEXT,
-  report_resolution TEXT                        -- refund | credit | pass_credit | credit_returned
+  report_resolution TEXT,                       -- refund | credit | pass_credit | credit_returned
+  review_status TEXT,                           -- pending | approved | rejected | auto_credit (money refunds only)
+  review_deadline TEXT,                         -- after this an unreviewed refund becomes a free credit
+  reviewed_at TEXT,
+  reviewed_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS admin_notifications (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  channel TEXT NOT NULL,                        -- email | console
+  created_at TEXT NOT NULL,
+  read_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS district_passes (
@@ -272,6 +286,11 @@ if (!hasColumn('unlocks', 'id')) {
       DROP TABLE unlocks_legacy;
     `),
   );
+}
+
+// Migration: admin review of "wrong details" money refunds.
+for (const column of ['review_status', 'review_deadline', 'reviewed_at', 'reviewed_by']) {
+  if (!hasColumn('unlocks', column)) db.exec(`ALTER TABLE unlocks ADD COLUMN ${column} TEXT`);
 }
 
 db.exec(`

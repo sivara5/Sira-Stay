@@ -52,6 +52,7 @@ function RootNavigator() {
         <Stack.Screen name="messages" options={{ title: t('messages.title') }} />
         <Stack.Screen name="district-pass" options={{ title: t('pass.title') }} />
         <Stack.Screen name="unlock/[id]/report" options={{ title: t('report.title') }} />
+        <Stack.Screen name="admin/reports" options={{ title: t('admin.title') }} />
         <Stack.Screen name="book/[id]" options={{ title: t('book.title') }} />
         <Stack.Screen name="checkout/[paymentId]" options={{ title: t('pay.title'), gestureEnabled: false }} />
         <Stack.Screen name="booking/[id]/index" options={{ title: t('bookings.detailsTitle') }} />

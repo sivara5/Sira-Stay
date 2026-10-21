@@ -74,12 +74,21 @@ Then register a second account as a house owner, complete KYC, and add a propert
 | Covers | That one property | Up to **40 unique** properties in that district |
 | Validity | — | 30 days from activation; then **Expired** |
 | Each unlock lasts | 6 months ("Unlocked till 21 April 2027"), then locks again | 6 months, even after the pass expires |
-| Wrong details | Report within 48 h: **full refund** or a **free unlock credit**, your choice | Report within 48 h: the **credit goes back** on the pass |
+| Wrong details | Report within 48 h: **free unlock credit** (instant) or a **money refund** (reviewed by the admin) | Report within 48 h: the **credit goes back** on the pass |
 
 - If you have an Active pass for a property's district, the app uses a pass credit instead of charging ₹29.
 - A credit is used only when an unlock succeeds. Unlocking the same property twice never uses a second credit.
 - **Duplicate payments** (e.g. paying twice) are detected and refunded automatically; you never get two unlock records.
 - The **District Pass dashboard** (Profile → District Pass) shows the district, 40 total credits, used and remaining credits, activation and expiry dates, and the status (Active, Expired or Fully Used).
+
+### "Report wrong details" — abuse protection and admin review
+
+- **Limit:** each tenant can report at most **2 times in any 30 days**.
+- **Free unlock credit** → given immediately. **Money refund** → marked pending for the admin to **approve** (refunded through Razorpay) or **reject** (no money; the tenant gets the contact back).
+- **Not reviewed within 3 days** → the tenant automatically gets a free unlock credit instead of money.
+- **3 different tenants** reporting the same listing → it is **hidden automatically** until the admin shows it again.
+- **Admin screen:** Profile → *Admin: reports & refunds*, visible only to accounts listed in `ADMIN_EMAILS` in `server/.env`. A red badge counts pending refunds plus unread notifications.
+- **Notifications:** every new report (and every auto-hidden listing) appears on the admin screen. It is also **emailed** to `ADMIN_EMAILS` once SMTP is set in `server/.env` (e.g. Gmail: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, your address and an [App Password](https://myaccount.google.com/apppasswords)). Until then it's printed in the server console.
 
 ### Testing payments in Razorpay Test Mode
 
@@ -107,7 +116,7 @@ Without keys, the app uses the built-in test checkout instead of Razorpay.
 | Categories: Homes · Apartments · Villas · PG · Room Sharing. Shows only the selected category. | `components/category-tabs.tsx`, `GET /properties?category=` |
 | Card shows rent, address (area, city), location. Owner contact stays locked. | `components/property-card.tsx` |
 | ₹29 single unlock / ₹99 District Pass → owner name, phone, WhatsApp for 6 months | `property/[id].tsx`, `district-pass.tsx`, `server/src/unlocks.js`, `POST /payments`, `POST /unlocks` |
-| Report wrong details within 48 h → refund or free credit (pass: credit back) | `unlock/[id]/report.tsx`, `POST /unlocks/:id/report` |
+| Report wrong details within 48 h (max 2 a month) → instant free credit, or admin-reviewed refund (auto credit after 3 days); 3 reporters hide a listing | `unlock/[id]/report.tsx`, `admin/reports.tsx`, `server/src/unlocks.js`, `POST /unlocks/:id/report`, `/admin/*` |
 | Other refunds: duplicate payment, technical failure, owner withdrawing the listing | `app/payments.tsx`, `POST /payments/:id/refund-request` |
 | "Owner not available, try again later" + Message later (in-app chat) | `property/[id].tsx`, `chat/…`, owner toggle in Profile |
 | Photos: minimum 3, maximum 20, clear, no duplicates, interior + exterior | Step 3 of `property/new.tsx`. The server also checks file content hashes, sizes and count. |
@@ -136,7 +145,7 @@ Without keys, the app uses the built-in test checkout instead of Razorpay.
 1. In `server/.env`, set `APP_SECRET` (64 hex characters). It encrypts locations, so keep it safe and never change it once you have data.
 2. Test everything in Razorpay Test Mode first (see above), then swap in **live** keys (`rzp_live_…`) in `server/.env`. Add a webhook pointing to `https://<api>/webhooks/razorpay`, with secret `RAZORPAY_WEBHOOK_SECRET`.
 3. Add SMTP details for email OTP and Twilio for SMS OTP. For Indian SMS, a DLT-registered provider such as MSG91 may be required. Swap it in `server/src/otp.js`.
-4. Set `AUTO_APPROVE_KYC=false`. There is no admin review screen yet, so build one or review records directly in the database.
+4. Set `ADMIN_EMAILS` and SMTP so wrong-details reports reach you. Set `AUTO_APPROVE_KYC=false`. KYC has no admin review screen yet (wrong-details refunds do), so review KYC records directly in the database or extend the admin screen.
 5. Host the API over HTTPS and back up `server/data/`. SQLite is fine for a pilot; move to Postgres for scale.
 6. For Play Store builds, add a Google Maps API key to `sira-stay/app.json` (`react-native-maps` plugin) and build with EAS (`npx eas-cli build`).
 

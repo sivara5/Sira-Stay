@@ -10,9 +10,10 @@ export const AMENITIES = ['wifi', 'ac', 'parking', 'power_backup', 'water_24x7',
 export type Amenity = (typeof AMENITIES)[number];
 
 export type Furnishing = 'unfurnished' | 'semi_furnished' | 'furnished';
-export type PropertyStatus = 'AVAILABLE' | 'BOOKED' | 'WITHDRAWN';
+export type PropertyStatus = 'AVAILABLE' | 'BOOKED' | 'WITHDRAWN' | 'HIDDEN';
 export type BookingStatus = 'PENDING_PAYMENT' | 'CONFIRMED' | 'EXPIRED' | 'FAILED' | 'CANCELLED';
-export type RefundStatus = 'under_review' | 'processing' | 'refunded' | 'rejected' | null;
+/** `credited`: an unreviewed wrong-details refund became a free unlock credit after 3 days. */
+export type RefundStatus = 'under_review' | 'processing' | 'refunded' | 'rejected' | 'credited' | null;
 export type RefundReason = 'duplicate' | 'technical' | 'withdrawn' | 'wrong_details';
 
 export type Me = {
@@ -29,6 +30,7 @@ export type Me = {
   kycIdType: string | null;
   kycIdLast4: string | null;
   registrationStep: RegistrationStep;
+  isAdmin: boolean;
 };
 
 export type LatLng = { lat: number; lng: number };
@@ -112,6 +114,30 @@ export type UnlockOptions = {
 };
 
 export type ReportReason = 'wrong_number' | 'not_reachable' | 'not_owner' | 'not_available' | 'other';
+
+export type ReviewStatus = 'pending' | 'approved' | 'rejected' | 'auto_credit' | null;
+
+export type AdminReport = {
+  id: string;
+  tenant: { email: string; name: string | null };
+  property: { id: string; title: string; area: string; district: string; status: string };
+  method: Unlock['method'];
+  reason: string;
+  resolution: 'refund' | 'credit' | 'pass_credit' | 'credit_returned';
+  reviewStatus: ReviewStatus;
+  reviewDeadline: string | null;
+  reportedAt: string;
+  amount: number | null;
+  refundStatus: RefundStatus;
+};
+
+export type AdminOverview = {
+  pending: AdminReport[];
+  reports: AdminReport[];
+  hiddenProperties: { id: string; title: string; area: string; district: string; reporters: number }[];
+  notifications: { id: string; kind: string; title: string; body: string; channel: string; createdAt: string; readAt: string | null }[];
+  unreadNotifications: number;
+};
 
 export type OwnerListing = PropertyCard & {
   verification: 'pending' | 'verified';

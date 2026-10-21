@@ -70,6 +70,14 @@ export const config = {
   districtPassDays: 30, // pass validity from activation
   unlockMonths: 6, // every unlock stays open this long
   reportWindowHours: 48, // "Report Wrong Details" window
+  reportsPerMonth: 2, // max wrong-details reports per tenant in any 30 days
+  refundReviewDays: 3, // unreviewed refund requests become a free unlock credit after this
+  hideAfterReporters: 3, // distinct tenants reporting a listing → it is hidden
+  // Accounts that can open the admin screen (comma-separated emails, set in server/.env).
+  adminEmails: (env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
   bookingHoldMinutes: Number(env.BOOKING_HOLD_MINUTES || 10),
   paymentProvider: razorpay.keyId && razorpay.keySecret ? 'razorpay' : 'mock',
   razorpay,

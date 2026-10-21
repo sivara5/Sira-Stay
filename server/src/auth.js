@@ -1,5 +1,8 @@
+import { config } from './config.js';
 import { one, run } from './db.js';
 import { HttpError, sha256 } from './util.js';
+
+export const isAdmin = (user) => Boolean(user && config.adminEmails.includes(user.email));
 
 /**
  * Registration progress: email → role → phone OTP → (owners only) KYC.
@@ -33,6 +36,7 @@ export function toMe(user) {
     kycIdType: user.kyc_id_type,
     kycIdLast4: user.kyc_id_last4,
     registrationStep: registrationStep(user),
+    isAdmin: isAdmin(user),
   };
 }
 
@@ -55,6 +59,12 @@ export function requireRegistered(req, _res, next) {
   if (registrationStep(req.user) !== 'done') {
     throw new HttpError(403, 'REGISTRATION_INCOMPLETE', 'Please complete registration first.');
   }
+  next();
+}
+
+export function requireAdmin(req, _res, next) {
+  requireRegistered(req, _res, () => {});
+  if (!isAdmin(req.user)) throw new HttpError(403, 'ADMIN_ONLY', 'Only Sira Stay admins can do this.');
   next();
 }
 
