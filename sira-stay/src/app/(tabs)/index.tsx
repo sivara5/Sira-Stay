@@ -82,6 +82,8 @@ export default function Home() {
             placeholder={t('home.search')}
             placeholderTextColor={colors.textMuted}
             style={styles.searchInput}
+            selectionColor={colors.primary}
+            keyboardAppearance="dark"
             returnKeyType="search"
             autoCorrect={false}
             onSubmitEditing={() => setQuery(searchTerm(search))}
@@ -165,7 +167,7 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface },
+  safe: { flex: 1, backgroundColor: colors.background },
   list: { paddingBottom: 24, flexGrow: 1 },
   padded: { paddingHorizontal: 16 },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, paddingBottom: 14 },
@@ -173,7 +175,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.white,
+    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -200,14 +202,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     marginBottom: 14,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
   },
   searchInput: { flex: 1, fontSize: 16, color: colors.text, fontWeight: '500' },
   sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginTop: 18, marginBottom: 10 },

@@ -1,15 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandLogo } from '@/components/brand-logo';
-import { Button } from '@/components/button';
-import { Banner } from '@/components/feedback';
-import { LanguageSwitch } from '@/components/language-switch';
-import { TextField } from '@/components/text-field';
-import { colors, radius, shadow } from '@/constants/theme';
+import { EditFieldDialog } from '@/components/edit-field-dialog';
+import { cardStyle, colors, radius } from '@/constants/theme';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatPhone } from '@/lib/format';
@@ -18,31 +15,31 @@ import type { AdminOverview, Me, Role } from '@/lib/types';
 import { useQuery } from '@/lib/use-query';
 
 const ROLES = [
-  { role: 'tenant', icon: 'home', label: 'profile.tenant', hint: 'profile.tenantHint', dashboard: '/' },
-  { role: 'owner', icon: 'key', label: 'profile.owner', hint: 'profile.ownerHint', dashboard: '/listings' },
+  { role: 'tenant', icon: 'home', label: 'profile.tenant', dashboard: '/' },
+  { role: 'owner', icon: 'key', label: 'profile.owner', dashboard: '/listings' },
 ] as const;
 
 const KYC_TONE = {
   verified: { bg: colors.successSoft, fg: colors.success },
-  pending: { bg: colors.accentSoft, fg: '#92400E' },
+  pending: { bg: colors.warningSoft, fg: colors.warning },
   rejected: { bg: colors.dangerSoft, fg: colors.danger },
-  none: { bg: colors.surface, fg: colors.textMuted },
+  none: { bg: colors.elevated, fg: colors.textMuted },
 } as const;
 
+const MOBILE = /^[6-9]\d{9}$/;
+
 export default function Profile() {
-  const { t, errorText } = useI18n();
-  const { user, setUser, signOut } = useAuth();
-  const [name, setName] = useState(user?.name ?? '');
-  const [whatsapp, setWhatsapp] = useState(user?.whatsapp?.replace(/^\+91/, '') ?? '');
-  const [saving, setSaving] = useState(false);
+  const { t, lang, errorText } = useI18n();
+  const { user, setUser, signOut, changeLanguage } = useAuth();
   const [switchingTo, setSwitchingTo] = useState<Role | null>(null);
-  // Admins get a badge: refunds waiting for review + unread report notifications.
+  const [editing, setEditing] = useState<'name' | 'whatsapp' | null>(null);
+  // Admins get a badge: refunds to review, unread report notifications and listings to verify.
   const { data: admin } = useQuery<AdminOverview>(user?.isAdmin ? '/admin/reports' : null, { pollMs: 60_000 });
-  const adminBadge = admin ? admin.pending.length + admin.unreadNotifications : 0;
+  const adminBadge = admin ? admin.pending.length + admin.unreadNotifications + (admin.listings?.length ?? 0) : 0;
   const insets = useSafeAreaInsets();
   if (!user) return null;
   const isOwner = user.role === 'owner';
-  const showKyc = isOwner || user.kycStatus !== 'none';
+  const displayName = user.name || user.email.split('@')[0];
 
   /** Same account, new active role → open that role's dashboard. */
   async function switchRole(role: Role, dashboard: '/' | '/listings') {
@@ -59,8 +56,7 @@ export default function Profile() {
     }
   }
 
-  async function update(body: Partial<Pick<Me, 'name' | 'available'>> & { whatsapp?: string }) {
-    setSaving(true);
+  async function update(body: { name?: string; whatsapp?: string; available?: boolean }) {
     try {
       const { user: me } = await api<{ user: Me }>('/me', { method: 'PATCH', body });
       setUser(me);
@@ -68,17 +64,18 @@ export default function Profile() {
     } catch (err) {
       Alert.alert(t('common.error'), errorText(err));
       return false;
-    } finally {
-      setSaving(false);
     }
   }
 
-  async function saveDetails() {
-    const body: { name?: string; whatsapp?: string } = {};
-    if (name.trim() && name.trim() !== user?.name) body.name = name.trim();
-    if (isOwner && whatsapp && `+91${whatsapp}` !== user?.whatsapp) body.whatsapp = whatsapp;
-    if (Object.keys(body).length && (await update(body))) Alert.alert(t('common.saved'));
+  function chooseLanguage() {
+    Alert.alert(t('lang.label'), undefined, [
+      { text: t('lang.en'), onPress: () => changeLanguage('en') },
+      { text: t('lang.ta'), onPress: () => changeLanguage('ta') },
+      { text: t('common.cancel'), style: 'cancel' },
+    ]);
   }
+
+  const kyc = KYC_TONE[user.kycStatus];
 
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
@@ -86,7 +83,7 @@ export default function Profile() {
         <View style={styles.brandRow}>
           <BrandLogo tagline={t('profile.tagline')} />
           <View style={styles.activePill}>
-            <Ionicons name={isOwner ? 'key' : 'home'} size={13} color={colors.primaryDark} />
+            <Ionicons name={isOwner ? 'key' : 'home'} size={13} color={colors.primary} />
             <Text style={styles.activePillText}>{isOwner ? t('profile.owner') : t('profile.tenant')}</Text>
           </View>
         </View>
@@ -94,34 +91,30 @@ export default function Profile() {
         <View style={styles.card}>
           <View style={styles.header}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{(user.name || user.email).charAt(0).toUpperCase()}</Text>
+              <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
             </View>
             <View style={styles.flex}>
-              <View style={styles.nameRow}>
+              <Pressable style={styles.nameRow} onPress={() => setEditing('name')} accessibilityRole="button" accessibilityHint={t('profile.editName')}>
                 <Text style={styles.name} numberOfLines={1}>
-                  {user.name || user.email.split('@')[0]}
+                  {displayName}
                 </Text>
-                {user.phoneVerified && <Ionicons name="checkmark-circle" size={18} color={colors.primary} />}
-              </View>
+                {user.phoneVerified && <Ionicons name="checkmark-circle" size={16} color={colors.success} />}
+                <Ionicons name="pencil" size={13} color={colors.textMuted} />
+              </Pressable>
               <Text style={styles.muted} numberOfLines={1}>
                 {user.email}
               </Text>
               {user.phone && <Text style={styles.muted}>{formatPhone(user.phone)}</Text>}
             </View>
           </View>
-          {showKyc && (
-            <View style={[styles.kycChip, { backgroundColor: KYC_TONE[user.kycStatus].bg }]}>
-              <Ionicons name="shield-checkmark-outline" size={13} color={KYC_TONE[user.kycStatus].fg} />
-              <Text style={[styles.kycText, { color: KYC_TONE[user.kycStatus].fg }]}>
-                {t('profile.kycChip', { status: t(`kyc.${user.kycStatus}`) })}
-              </Text>
-            </View>
-          )}
+          <View style={[styles.kycChip, { backgroundColor: kyc.bg }]}>
+            <Ionicons name="shield-checkmark-outline" size={12} color={kyc.fg} />
+            <Text style={[styles.kycText, { color: kyc.fg }]}>{t('profile.kycChip', { status: t(`kyc.${user.kycStatus}`) })}</Text>
+          </View>
 
           <View style={styles.divider} />
 
-          <Text style={styles.sectionTitle}>{t('profile.roleMode')}</Text>
-          <Text style={styles.hint}>{t('profile.roleModeHint')}</Text>
+          <Text style={styles.roleTitle}>{t('profile.roleMode')}</Text>
           <View style={styles.roleRow} accessibilityRole="radiogroup">
             {ROLES.map((r) => {
               const active = user.role === r.role;
@@ -133,101 +126,121 @@ export default function Profile() {
                   onPress={() => switchRole(r.role, r.dashboard)}
                   style={({ pressed }) => [styles.roleButton, active && styles.roleButtonActive, pressed && !active && styles.pressed]}>
                   {switchingTo === r.role ? (
-                    <ActivityIndicator color={colors.primary} />
+                    <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
-                    <Ionicons name={r.icon} size={22} color={active ? colors.white : colors.primary} />
+                    <Ionicons name={r.icon} size={16} color={active ? colors.onPrimary : colors.primary} />
                   )}
                   <Text style={[styles.roleLabel, active && styles.roleLabelActive]}>{t(r.label)}</Text>
-                  <Text style={[styles.roleHint, active && styles.roleHintActive]}>{t(r.hint)}</Text>
                 </Pressable>
               );
             })}
           </View>
-          {isOwner && user.kycStatus === 'none' && (
-            <Banner tone="info" icon="document-text-outline">
-              {t('profile.ownerKycNote')}
-            </Banner>
-          )}
+          {isOwner && user.kycStatus === 'none' && <Text style={styles.hint}>{t('profile.ownerKycNote')}</Text>}
         </View>
 
         <Text style={styles.groupTitle}>{t('profile.settings')}</Text>
-        <View style={styles.card}>
-          <Text style={styles.label}>{t('lang.label')}</Text>
-          <LanguageSwitch />
-        </View>
-
-        <View style={styles.card}>
-          <TextField label={t('profile.name')} value={name} onChangeText={setName} autoComplete="name" />
+        <View style={styles.list}>
+          <Row label={t('lang.label')} value={lang === 'ta' ? t('lang.ta') : t('lang.en')} onPress={chooseLanguage} first />
           {isOwner && (
-            <TextField
+            <Row
               label={t('profile.whatsapp')}
-              prefix="+91"
-              value={whatsapp}
-              onChangeText={(v) => setWhatsapp(v.replace(/\D/g, '').slice(0, 10))}
-              keyboardType="phone-pad"
-              maxLength={10}
+              value={user.whatsapp ? formatPhone(user.whatsapp) : t('profile.add')}
+              onPress={() => setEditing('whatsapp')}
             />
           )}
-          <Button title={t('common.save')} variant="secondary" small onPress={saveDetails} loading={saving} />
+          {isOwner && (
+            <Row
+              label={t('profile.availability')}
+              hint={t('profile.availabilityHint')}
+              right={
+                <Switch
+                  value={user.available}
+                  onValueChange={(available) => {
+                    update({ available });
+                  }}
+                  trackColor={{ true: colors.primary, false: colors.elevated }}
+                  thumbColor={colors.white}
+                />
+              }
+            />
+          )}
         </View>
 
-        {isOwner && (
-          <View style={styles.card}>
-            <View style={styles.switchRow}>
-              <Text style={[styles.label, styles.flex]}>{t('profile.availability')}</Text>
-              <Switch
-                value={user.available}
-                onValueChange={(available) => {
-                  update({ available });
-                }}
-                trackColor={{ true: colors.primary, false: colors.border }}
-                thumbColor={colors.white}
-              />
-            </View>
-            <Text style={styles.hint}>{t('profile.availabilityHint')}</Text>
-          </View>
-        )}
-
-        {user.isAdmin && (
-          <Pressable style={[styles.linkRow, styles.adminRow]} onPress={() => router.push('/admin/reports')}>
-            <Ionicons name="shield-half-outline" size={20} color={colors.primaryDark} />
-            <Text style={[styles.label, styles.flex]}>{t('admin.open')}</Text>
-            {adminBadge > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{adminBadge > 99 ? '99+' : adminBadge}</Text>
-              </View>
-            )}
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </Pressable>
-        )}
-
-        <Pressable style={styles.linkRow} onPress={() => router.push('/district-pass')}>
-          <Ionicons name="ticket-outline" size={20} color={colors.text} />
-          <Text style={[styles.label, styles.flex]}>{t('pass.title')}</Text>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </Pressable>
-
-        <Pressable style={styles.linkRow} onPress={() => router.push('/messages')}>
-          <Ionicons name="chatbubbles-outline" size={20} color={colors.text} />
-          <Text style={[styles.label, styles.flex]}>{t('messages.title')}</Text>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </Pressable>
-
-        <Pressable style={styles.linkRow} onPress={() => router.push('/payments')}>
-          <Ionicons name="receipt-outline" size={20} color={colors.text} />
-          <Text style={[styles.label, styles.flex]}>{t('profile.payments')}</Text>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </Pressable>
-
-        <Button title={t('profile.signOut')} variant="danger" icon="log-out-outline" onPress={signOut} />
+        <Text style={styles.groupTitle}>{t('profile.account')}</Text>
+        <View style={styles.list}>
+          <Row label={t('pass.title')} onPress={() => router.push('/district-pass')} first />
+          <Row label={t('messages.title')} onPress={() => router.push('/messages')} />
+          <Row label={t('profile.payments')} onPress={() => router.push('/payments')} />
+          {/* Only accounts listed in ADMIN_EMAILS on the server are admins. */}
+          {user.isAdmin && <Row label={t('admin.open')} badge={adminBadge} onPress={() => router.push('/admin/reports')} />}
+          <Row label={t('profile.signOut')} danger onPress={signOut} />
+        </View>
       </ScrollView>
+
+      {editing === 'name' && (
+        <EditFieldDialog
+          title={t('profile.name')}
+          initialValue={user.name ?? ''}
+          maxLength={80}
+          validate={(v) => (v.trim().length >= 2 ? null : t('common.required'))}
+          onSave={(v) => update({ name: v.trim() })}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {editing === 'whatsapp' && (
+        <EditFieldDialog
+          title={t('profile.whatsapp')}
+          initialValue={user.whatsapp?.replace(/^\+91/, '') ?? ''}
+          prefix="+91"
+          keyboardType="phone-pad"
+          maxLength={10}
+          format={(v) => v.replace(/\D/g, '').slice(0, 10)}
+          validate={(v) => (MOBILE.test(v) ? null : t('err.INVALID_PHONE'))}
+          onSave={(v) => update({ whatsapp: v })}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </View>
   );
 }
 
+/** Plain settings row: label on the left; value, control or arrow on the right. */
+function Row(props: {
+  label: string;
+  value?: string;
+  hint?: string;
+  right?: ReactNode;
+  badge?: number;
+  danger?: boolean;
+  first?: boolean;
+  onPress?: () => void;
+}) {
+  const { label, value, hint, right, badge, danger, first, onPress } = props;
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      style={({ pressed }) => [styles.row, !first && styles.rowDivider, pressed && styles.rowPressed]}>
+      <View style={styles.flex}>
+        <Text style={[styles.rowLabel, danger && styles.danger]}>{label}</Text>
+        {hint && <Text style={styles.rowHint}>{hint}</Text>}
+      </View>
+      {right}
+      {value && <Text style={styles.rowValue}>{value}</Text>}
+      {badge ? (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+        </View>
+      ) : null}
+      {onPress && !danger && <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />}
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface },
-  content: { padding: 16, gap: 14 },
+  safe: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 16, gap: 12 },
   flex: { flex: 1 },
   brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 4 },
   activePill: {
@@ -237,16 +250,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radius.pill,
-    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
   },
-  activePillText: { fontSize: 13, fontWeight: '700', color: colors.primaryDark },
-  card: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 16, gap: 12, ...shadow.card },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.white, fontSize: 26, fontWeight: '800' },
+  activePillText: { fontSize: 13, fontWeight: '700', color: colors.text },
+  card: { ...cardStyle, padding: 14, gap: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { color: colors.primary, fontSize: 22, fontWeight: '800' },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  name: { fontSize: 20, fontWeight: '800', color: colors.text, flexShrink: 1 },
-  muted: { fontSize: 14, color: colors.textMuted },
+  name: { fontSize: 18, fontWeight: '800', color: colors.text, flexShrink: 1 },
+  muted: { fontSize: 13, color: colors.textMuted },
   kycChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -254,37 +278,38 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
   },
-  kycText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
+  kycText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase' },
   divider: { height: 1, backgroundColor: colors.border },
-  sectionTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
-  groupTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginTop: 6 },
-  hint: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
-  roleRow: { flexDirection: 'row', gap: 10 },
+  roleTitle: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
+  hint: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
+  roleRow: { flexDirection: 'row', gap: 8 },
   roleButton: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
-    minHeight: 104,
     justifyContent: 'center',
+    gap: 6,
+    height: 40,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   roleButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  pressed: { backgroundColor: colors.primarySoft },
-  roleLabel: { fontSize: 16, fontWeight: '800', color: colors.text },
-  roleLabelActive: { color: colors.white },
-  roleHint: { fontSize: 12, color: colors.textMuted, textAlign: 'center' },
-  roleHintActive: { color: 'rgba(255,255,255,0.85)' },
-  label: { fontSize: 15, fontWeight: '600', color: colors.text },
-  switchRow: { flexDirection: 'row', alignItems: 'center' },
-  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.white, borderRadius: radius.lg, padding: 16 },
-  adminRow: { borderWidth: 1.5, borderColor: colors.primary },
+  pressed: { backgroundColor: colors.elevated },
+  roleLabel: { fontSize: 14, fontWeight: '700', color: colors.text },
+  roleLabelActive: { color: colors.onPrimary },
+  groupTitle: { fontSize: 13, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 6 },
+  list: { ...cardStyle, paddingHorizontal: 14 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 50, paddingVertical: 10 },
+  rowDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+  rowPressed: { opacity: 0.7 },
+  rowLabel: { fontSize: 15, color: colors.text },
+  rowHint: { fontSize: 12, color: colors.textMuted, marginTop: 2, lineHeight: 16 },
+  rowValue: { fontSize: 15, fontWeight: '700', color: colors.primary },
+  danger: { color: colors.danger, fontWeight: '700' },
   badge: {
     minWidth: 22,
     height: 22,

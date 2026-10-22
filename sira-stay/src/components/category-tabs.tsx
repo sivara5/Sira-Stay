@@ -28,7 +28,7 @@ export function CategoryTabs({ value, onChange }: { value: Category; onChange: (
             accessibilityState={{ selected }}
             onPress={() => onChange(c)}
             style={styles.tab}>
-            <Ionicons name={categoryIcon[c]} size={24} color={selected ? colors.text : colors.textMuted} />
+            <Ionicons name={categoryIcon[c]} size={24} color={selected ? colors.primary : colors.textMuted} />
             <Text style={[styles.label, selected && styles.labelSelected]}>{t(`cat.${c}`)}</Text>
             <View style={[styles.indicator, selected && styles.indicatorSelected]} />
           </Pressable>
@@ -52,7 +52,7 @@ export function CategoryButtons({ value, onChange }: { value: Category; onChange
             accessibilityState={{ selected }}
             onPress={() => onChange(c)}
             style={({ pressed }) => [styles.button, selected && styles.buttonSelected, pressed && !selected && styles.buttonPressed]}>
-            <Ionicons name={categoryIcon[c]} size={17} color={selected ? colors.white : colors.primary} />
+            <Ionicons name={categoryIcon[c]} size={17} color={selected ? colors.onPrimary : colors.primary} />
             <Text style={[styles.buttonLabel, selected && styles.buttonLabelSelected]}>{t(`cat.${c}`)}</Text>
           </Pressable>
         );
@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
   labelSelected: { color: colors.text, fontWeight: '800' },
   indicator: { height: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: 'transparent', marginTop: 4 },
-  indicatorSelected: { backgroundColor: colors.text },
+  indicatorSelected: { backgroundColor: colors.primary },
   buttons: { paddingHorizontal: 16, gap: 8 },
   button: {
     flexDirection: 'row',
@@ -78,10 +78,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.white,
+    backgroundColor: colors.card,
   },
   buttonSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  buttonPressed: { backgroundColor: colors.primarySoft },
+  buttonPressed: { backgroundColor: colors.elevated },
   buttonLabel: { fontSize: 14, fontWeight: '700', color: colors.text },
-  buttonLabelSelected: { color: colors.white },
+  buttonLabelSelected: { color: colors.onPrimary },
 });

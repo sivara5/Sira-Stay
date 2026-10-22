@@ -29,6 +29,7 @@ export function toMe(user) {
     phone: user.phone,
     phoneVerified: Boolean(user.phone_verified),
     whatsapp: user.whatsapp,
+    contactPhone: user.contact_phone,
     name: user.name,
     language: user.language,
     available: Boolean(user.available),

@@ -1,5 +1,4 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,12 +7,12 @@ import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
 import { DetailRow } from '@/components/detail-row';
 import { Banner, ErrorView, Loading } from '@/components/feedback';
-import { colors, radius, shadow } from '@/constants/theme';
-import { api } from '@/lib/api';
+import { useStartPayment } from '@/components/payment-method-sheet';
+import { cardStyle, colors, radius } from '@/constants/theme';
 import { DISTRICTS, districtLabel } from '@/lib/districts';
 import { formatDateLong, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import type { Checkout, PassStatus, PassSummary, Payment } from '@/lib/types';
+import type { PassStatus, PassSummary } from '@/lib/types';
 import { useQuery } from '@/lib/use-query';
 
 type Dashboard = {
@@ -24,8 +23,8 @@ type Dashboard = {
 
 const STATUS_TONE: Record<PassStatus, { bg: string; fg: string }> = {
   ACTIVE: { bg: colors.successSoft, fg: colors.success },
-  FULLY_USED: { bg: colors.accentSoft, fg: '#92400E' },
-  EXPIRED: { bg: colors.surface, fg: colors.textMuted },
+  FULLY_USED: { bg: colors.warningSoft, fg: colors.warning },
+  EXPIRED: { bg: colors.elevated, fg: colors.textMuted },
 };
 
 /** District Pass dashboard + purchase (₹99, one district, 40 unlocks, 30 days). */
@@ -34,6 +33,7 @@ export default function DistrictPass() {
   const { data, error, loading, refreshing, refresh, reload } = useQuery<Dashboard>('/my/district-passes');
   const [district, setDistrict] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  const startPayment = useStartPayment();
 
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorView error={error} onRetry={reload} />;
@@ -44,11 +44,11 @@ export default function DistrictPass() {
     if (!district) return;
     setPaying(true);
     try {
-      const res = await api<{ payment: Payment; checkout: Checkout }>('/payments', { body: { purpose: 'district_pass', district } });
-      router.push({
-        pathname: '/checkout/[paymentId]',
-        params: { paymentId: res.payment.id, checkout: JSON.stringify(res.checkout), purpose: 'district_pass', propertyId: '' },
-      });
+      // Pick Google Pay, PhonePe, another UPI app or a card, then pay ₹99 in checkout.
+      await startPayment(
+        { purpose: 'district_pass', district },
+        { amount: pricing.passPrice, description: t('pay.passFor', { district: districtLabel(district, lang), credits: pricing.passCredits }) },
+      );
     } catch (err) {
       Alert.alert(t('pay.failedTitle'), errorText(err));
       reload();
@@ -74,7 +74,7 @@ export default function DistrictPass() {
         )}
         {data.freeCredits > 0 && (
           <View style={styles.credits}>
-            <Ionicons name="gift-outline" size={18} color={colors.primaryDark} />
+            <Ionicons name="gift-outline" size={18} color={colors.primary} />
             <Text style={styles.creditsText}>{t('pass.freeCredits', { n: data.freeCredits })}</Text>
           </View>
         )}
@@ -139,21 +139,21 @@ function PassCard({ pass }: { pass: PassSummary }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface },
+  safe: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, gap: 14 },
   flex: { flex: 1 },
   sectionTitle: { fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 6 },
   muted: { fontSize: 14, color: colors.textMuted },
-  card: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 16, gap: 10, ...shadow.card },
+  card: { ...cardStyle, padding: 16, gap: 10 },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   district: { fontSize: 19, fontWeight: '800', color: colors.text },
   status: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill },
   statusText: { fontSize: 12, fontWeight: '800' },
-  progress: { height: 8, borderRadius: 4, backgroundColor: colors.border, overflow: 'hidden' },
+  progress: { height: 8, borderRadius: 4, backgroundColor: colors.elevated, overflow: 'hidden' },
   progressFill: { height: 8, backgroundColor: colors.primary },
   credits: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.primarySoft, padding: 12, borderRadius: radius.md },
-  creditsText: { fontSize: 14, fontWeight: '700', color: colors.primaryDark },
+  creditsText: { fontSize: 14, fontWeight: '700', color: colors.primaryLight },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   rules: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
-  footer: { padding: 16, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.border },
+  footer: { padding: 16, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border },
 });

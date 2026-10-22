@@ -122,7 +122,7 @@ function Option(props: { selected: boolean; icon: 'cash-outline' | 'gift-outline
         <Text style={styles.optionTitle}>{props.title}</Text>
         <Text style={styles.hint}>{props.hint}</Text>
       </View>
-      <Ionicons name={props.selected ? 'radio-button-on' : 'radio-button-off'} size={22} color={props.selected ? colors.primary : colors.border} />
+      <Ionicons name={props.selected ? 'radio-button-on' : 'radio-button-off'} size={22} color={props.selected ? colors.primary : colors.textMuted} />
     </Pressable>
   );
 }

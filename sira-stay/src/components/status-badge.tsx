@@ -6,14 +6,14 @@ import type { BookingStatus, PropertyStatus } from '@/lib/types';
 
 const tones: Record<PropertyStatus | BookingStatus, { bg: string; fg: string }> = {
   AVAILABLE: { bg: colors.successSoft, fg: colors.success },
-  BOOKED: { bg: colors.accentSoft, fg: '#92400E' },
-  WITHDRAWN: { bg: colors.surface, fg: colors.textMuted },
+  BOOKED: { bg: colors.warningSoft, fg: colors.warning },
+  WITHDRAWN: { bg: colors.elevated, fg: colors.textMuted },
   HIDDEN: { bg: colors.dangerSoft, fg: colors.danger },
   PENDING_PAYMENT: { bg: colors.infoSoft, fg: colors.info },
   CONFIRMED: { bg: colors.successSoft, fg: colors.success },
   CANCELLED: { bg: colors.dangerSoft, fg: colors.danger },
   FAILED: { bg: colors.dangerSoft, fg: colors.danger },
-  EXPIRED: { bg: colors.surface, fg: colors.textMuted },
+  EXPIRED: { bg: colors.elevated, fg: colors.textMuted },
 };
 
 export function StatusBadge({ status }: { status: PropertyStatus | BookingStatus }) {

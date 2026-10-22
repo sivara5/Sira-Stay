@@ -12,6 +12,8 @@ export function TextField({ label, hint, error, prefix, style, multiline, ...res
         {prefix && <Text style={styles.prefix}>{prefix}</Text>}
         <TextInput
           placeholderTextColor={colors.textMuted}
+          selectionColor={colors.primary}
+          keyboardAppearance="dark"
           style={[styles.input, multiline && styles.multiline, style]}
           multiline={multiline}
           {...rest}
@@ -35,7 +37,9 @@ export function OtpField({ value, onChangeText, error }: { value: string; onChan
         maxLength={6}
         autoFocus
         placeholder="••••••"
-        placeholderTextColor={colors.border}
+        placeholderTextColor={colors.textMuted}
+        selectionColor={colors.primary}
+        keyboardAppearance="dark"
         style={[styles.otp, error ? styles.inputError : null]}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -52,7 +56,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     paddingHorizontal: 14,
   },
   multilineRow: { alignItems: 'flex-start' },
@@ -72,6 +76,6 @@ const styles = StyleSheet.create({
     letterSpacing: 14,
     fontWeight: '700',
     color: colors.text,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
   },
 });

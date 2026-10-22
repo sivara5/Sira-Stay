@@ -41,7 +41,7 @@ export function ErrorView({ error, onRetry }: { error: unknown; onRetry?: () => 
 type Tone = 'info' | 'warning' | 'danger' | 'success';
 const toneColors: Record<Tone, { bg: string; fg: string; icon: IconName }> = {
   info: { bg: colors.infoSoft, fg: colors.info, icon: 'information-circle' },
-  warning: { bg: colors.accentSoft, fg: '#92400E', icon: 'warning' },
+  warning: { bg: colors.warningSoft, fg: colors.warning, icon: 'warning' },
   danger: { bg: colors.dangerSoft, fg: colors.danger, icon: 'alert-circle' },
   success: { bg: colors.successSoft, fg: colors.success, icon: 'checkmark-circle' },
 };
@@ -79,6 +79,8 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 36,
     backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },

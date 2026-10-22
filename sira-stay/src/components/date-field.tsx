@@ -49,6 +49,8 @@ export function DateField({ label, value, placeholder, minimumDate, maximumDate,
           value={current}
           mode="date"
           display="inline"
+          themeVariant="dark"
+          accentColor={colors.primary}
           minimumDate={minimumDate}
           maximumDate={maximumDate}
           onChange={(_, date) => date && onChange(toDateString(date))}
@@ -70,7 +72,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
   },
   value: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
   placeholder: { color: colors.textMuted, fontWeight: '400' },

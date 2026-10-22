@@ -4,7 +4,7 @@ Rental booking app for Tamil Nadu: homes, apartments, villas, PGs and room shari
 
 | Folder | What it is |
 | --- | --- |
-| [`sira-stay/`](sira-stay) | Mobile app — Expo SDK 57, Expo Router, TypeScript. Runs in **Expo Go**. |
+| [`sira-stay/`](sira-stay) | Mobile app — Expo SDK 57, Expo Router, TypeScript. Runs in **Expo Go**, except *Continue with Google*, which needs a development build (see [Continue with Google](#continue-with-google)). |
 | [`server/`](server) | API — Node.js 22.13+ (tested on 24), Express 5, built-in SQLite. No database to install. |
 
 ## Run it on your phone
@@ -51,6 +51,9 @@ Until you add provider keys to `server/.env` (copy `server/.env.example`):
 - **OTP codes** for email and phone appear in a yellow banner in the app (tap it to fill the code) and in the server console.
 - **Payments** use a built-in test checkout. No real money moves. It has buttons for both success and failure.
 - **Owner KYC** is approved automatically.
+- **Continue with Google** says it isn't set up yet. Sign in with email instead, or set it up as described in [Continue with Google](#continue-with-google).
+
+The app opens in English with no language step. Tamil is in Profile → Language.
 
 Demo owner accounts (sign in with the email; the code shows in the app):
 
@@ -59,12 +62,13 @@ Demo owner accounts (sign in with the email; the code shows in the app):
 
 **Suggested walkthrough:** register as a tenant, then:
 1. Pick a category in the top menu.
-2. Open a listing and unlock the owner contact for ₹29, or buy a ₹99 District Pass for that district and unlock with a credit.
+2. Tap **Unlock owner contact ₹29** on a listing card (or on the listing page), or buy a ₹99 District Pass for that district and unlock with a credit. Before paying, the app asks how: **Google Pay**, **PhonePe**, another UPI app, or a **debit/credit card**.
 3. Tap **Call**. When you come back to the app, answer **No** to see "Owner not available" and use **Message later**.
-4. **Book now** and pay the booking amount.
-5. Open **My Bookings** and tap **View on Map** → **Open Map**.
+4. On the listing page, check the **Verified** section and write a **review** (only possible after unlocking).
+5. **Book now** and pay the booking amount.
+6. Open **My Bookings** and tap **View on Map** → **Open Map**.
 
-Then register a second account as a house owner, complete KYC, and add a property with 3 or more photos.
+Then register a second account as a house owner and complete KYC, including the **mobile and WhatsApp numbers** tenants will see after unlocking. Add a property with 3 or more photos. If your email is in `ADMIN_EMAILS`, open Profile → *Admin: reports & refunds* and verify the new listing.
 
 ## Unlocking owner contacts
 
@@ -87,7 +91,7 @@ Then register a second account as a house owner, complete KYC, and add a propert
 - **Free unlock credit** → given immediately. **Money refund** → marked pending for the admin to **approve** (refunded through Razorpay) or **reject** (no money; the tenant gets the contact back).
 - **Not reviewed within 3 days** → the tenant automatically gets a free unlock credit instead of money.
 - **3 different tenants** reporting the same listing → it is **hidden automatically** until the admin shows it again.
-- **Admin screen:** Profile → *Admin: reports & refunds*, visible only to accounts listed in `ADMIN_EMAILS` in `server/.env`. A red badge counts pending refunds plus unread notifications.
+- **Admin screen:** Profile → *Admin: reports & refunds*, visible only to accounts listed in `ADMIN_EMAILS` in `server/.env` (the server checks this on every admin request too). A red badge counts pending refunds, unread notifications and listings waiting for verification.
 - **Notifications:** every new report (and every auto-hidden listing) appears on the admin screen. It is also **emailed** to `ADMIN_EMAILS` once SMTP is set in `server/.env` (e.g. Gmail: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, your address and an [App Password](https://myaccount.google.com/apppasswords)). Until then it's printed in the server console.
 
 ### Testing payments in Razorpay Test Mode
@@ -101,27 +105,94 @@ The server never trusts the app's "payment successful" message. Nothing is unloc
    RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxx
    ```
 3. Restart the API. `GET /health` should show `"paymentProvider":"razorpay"`.
-4. In the app, pay ₹29 or ₹99. In Razorpay's test checkout, use UPI ID `success@razorpay` (or `failure@razorpay` to test a failure), or a [test card](https://razorpay.com/docs/payments/payments/test-card-details/).
+4. In the app, pay ₹29 or ₹99. Choose **Other UPI app** and use UPI ID `success@razorpay` (or `failure@razorpay` to test a failure), or choose **Debit / Credit card** and use a [test card](https://razorpay.com/docs/payments/payments/test-card-details/). Google Pay and PhonePe open those apps, so test them on an Android phone that has the app installed.
 5. Optional webhook: add `https://<your-api>/webhooks/razorpay` (events `payment.captured`, `payment.failed`) and put its secret in `RAZORPAY_WEBHOOK_SECRET`.
 6. Keep **automatic capture** on (Razorpay's default: *Account & Settings → Capture settings*). Payments interrupted by the network are recovered by looking for a *captured* payment on the order.
 
 Without keys, the app uses the built-in test checkout instead of Razorpay.
+
+### Choosing how to pay
+
+Tapping **Unlock owner contact ₹29** (card or listing page) or the **₹99 District Pass** opens a sheet with the amount in rupees and these choices:
+
+| Choice | What Razorpay Checkout shows |
+| --- | --- |
+| Google Pay | UPI intent to Google Pay only |
+| PhonePe | UPI intent to PhonePe only |
+| Other UPI app | Every UPI option (other apps, QR) |
+| Debit / Credit card | Card form only (debit and credit) |
+
+The app passes the choice to Razorpay Standard Checkout as a `config.display` block (`sira-stay/src/app/checkout/[paymentId].tsx`), so checkout opens straight on that method. In test mode the built-in checkout shows the chosen method. Booking payments still show every method.
+
+## Continue with Google
+
+The first screen offers **Continue with Google** and **Continue with email**. A Google sign-in creates the account, or signs in the existing account with the same email. The rest of registration (Tenant/Owner, phone OTP, owner KYC) stays the same.
+
+The server checks Google's ID token itself: the signature against Google's keys, the issuer, the audience (your client ID), the expiry, and that the email is verified (`server/src/google.js`).
+
+Google sign-in uses native code (`@react-native-google-signin/google-signin`), so it doesn't run in Expo Go. In Expo Go the button explains this and points to email sign-in. To set it up:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create OAuth client IDs:
+   - **Web application**. The app requests ID tokens for this client, and the server accepts it.
+   - **Android**: package `in.sirastay.app` plus the SHA-1 of your signing key. For local builds, run `.\gradlew signingReport` in `sira-stay\android`. For Play Store builds, use the app signing key from Play Console.
+   - **iOS** (only if you build for iOS): bundle ID `in.sirastay.app`.
+2. `server/.env`: `GOOGLE_CLIENT_IDS=<web client ID>`. Restart the server; `GET /health` shows `"googleSignIn":true`.
+3. `sira-stay/.env.local` (git ignores it):
+   ```
+   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=<web client ID>
+   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=<iOS client ID>   # iOS only
+   ```
+4. Build a development build: `npx expo run:android`, or `npx eas-cli build --profile development`. On iOS, `app.config.js` adds the URL scheme from the iOS client ID.
+
+## Maps in an installed build (Google Maps key)
+
+Expo Go has its own Google Maps key, so maps work there with no setup. A development or store build needs your own key; without it, every map (listing page, Explore, booking map, new-listing pin) is **blank**.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/google/maps-apis), enable **Maps SDK for Android** and create an API key. Restrict it to *Android apps* with package `in.sirastay.app` and the SHA-1 of your signing key (`.\gradlew signingReport` in `sira-stay\android`).
+2. Add it to `sira-stay/.env.local` (git ignores it):
+   ```
+   GOOGLE_MAPS_API_KEY=<your key>
+   ```
+   `app.config.js` passes it to the `react-native-maps` config plugin, which writes it into the Android manifest. For EAS builds, set `GOOGLE_MAPS_API_KEY` as an EAS environment variable instead.
+3. Regenerate the Android project so the manifest picks up the key, then rebuild:
+   ```bash
+   npx expo prebuild --platform android --clean
+   npx expo run:android
+   ```
+
+All maps use a dark style in the app's colours (`src/constants/map-style.ts`): a custom Google Maps style on Android, and Apple Maps' dark mode on iOS.
+
+## Reviews and the Verified section
+
+- **Listing cards** show the rating under the photo as "★ 4.5 (12)", or **New** if nobody has reviewed the listing yet.
+- **Who can review:** only tenants who unlocked the owner's contact (and didn't report it as wrong details), or who had a confirmed booking. Each tenant has one review per listing. Writing again updates it. The booking screen's "Rate this property" edits the same review. The server enforces this (`server/src/reviews.js`, `POST /properties/:id/reviews`).
+- **Listing page** shows reviews from previous tenants: first name and initial only, the stars, the date, and whether they contacted the owner or booked.
+- **Verified section** on the listing page:
+  - **Owner KYC verified:** the owner's KYC status is *verified*.
+  - **Admin verified:** an admin tapped **Verify listing**.
+  - **Property document checked:** an admin opened the ownership document and tapped **Document checked**.
+- **Admin screen → Listings to verify:** every active listing still missing a check. The private document opens through a signed link that works for 15 minutes; documents are never public. The demo listings count as already checked.
 
 ## How the requirements are implemented
 
 | Requirement | Where |
 | --- | --- |
 | Tenant sign-up: email → "Are you a Tenant?" → phone OTP. Done. | `sira-stay/src/app/onboarding/` |
-| Owner sign-up: email → role → phone OTP → registration + KYC (ID type, number, photo) | `onboarding/kyc.tsx`, `POST /auth/kyc` |
+| Sign in with Google or email; English by default, no language step | `onboarding/index.tsx`, `lib/google-auth.ts`, `POST /auth/google` |
+| Owner sign-up: email → role → phone OTP → registration + KYC (name, mobile + WhatsApp numbers shown to tenants after unlock, ID type, number, photo) | `components/kyc-form.tsx`, `POST /auth/kyc` |
 | Property documents requested only when listing | Step 4 of `property/new.tsx` |
 | Categories: Homes · Apartments · Villas · PG · Room Sharing. Shows only the selected category. | `components/category-tabs.tsx`, `GET /properties?category=` |
-| Card shows rent, address (area, city), location. Owner contact stays locked. | `components/property-card.tsx` |
+| Card shows rating ("★ 4.5 (12)" / New), rent, address (area, city), location, and a full-width gold **Unlock owner contact ₹29** button | `components/property-card.tsx` |
 | ₹29 single unlock / ₹99 District Pass → owner name, phone, WhatsApp for 6 months | `property/[id].tsx`, `district-pass.tsx`, `server/src/unlocks.js`, `POST /payments`, `POST /unlocks` |
+| Pay in INR with Google Pay, PhonePe, another UPI app, or a debit/credit card (Razorpay) | `components/payment-method-sheet.tsx`, `checkout/[paymentId].tsx` |
+| Reviews from tenants who unlocked the contact; Verified section (owner KYC, admin, document) | `property/[id].tsx`, `server/src/reviews.js`, `server/src/verification.js`, `admin/reports.tsx` |
+| Luxury dark theme (black, gold `#D4AF37`, white text), new logo, app icon and splash | `constants/theme.ts`, `assets/images/`, `app.json` |
+| Compact Profile: one small card, Tenant/Owner buttons, plain settings rows; admin row only for admins | `(tabs)/profile.tsx` |
 | Report wrong details within 48 h (max 2 a month) → instant free credit, or admin-reviewed refund (auto credit after 3 days); 3 reporters hide a listing | `unlock/[id]/report.tsx`, `admin/reports.tsx`, `server/src/unlocks.js`, `POST /unlocks/:id/report`, `/admin/*` |
 | Other refunds: duplicate payment, technical failure, owner withdrawing the listing | `app/payments.tsx`, `POST /payments/:id/refund-request` |
 | "Owner not available, try again later" + Message later (in-app chat) | `property/[id].tsx`, `chat/…`, owner toggle in Profile |
 | Photos: minimum 3, maximum 20, clear, no duplicates, interior + exterior | Step 3 of `property/new.tsx`. The server also checks file content hashes, sizes and count. |
-| English ⇄ Tamil in onboarding and in Profile settings | `components/language-switch.tsx`, `lib/strings.ts` |
+| English ⇄ Tamil in Profile → Language | `(tabs)/profile.tsx`, `lib/strings.ts` |
 | Required address, district/city, area/locality, landmark + map pin | Step 2 of `property/new.tsx` |
 | Exact location never public. Only the general area until unlock. | See *Privacy* below |
 | Booking amount shown before payment → BOOKED → My Bookings (CONFIRMED) | `book/[id].tsx`, `(tabs)/bookings.tsx` |
@@ -167,9 +238,10 @@ Built for patchy rural connections. All new messages are in English and Tamil an
 1. In `server/.env`, set `APP_SECRET` (64 hex characters). It encrypts locations, so keep it safe and never change it once you have data.
 2. Test everything in Razorpay Test Mode first (see above), then swap in **live** keys (`rzp_live_…`) in `server/.env`. Add a webhook pointing to `https://<api>/webhooks/razorpay`, with secret `RAZORPAY_WEBHOOK_SECRET`.
 3. Add SMTP details for email OTP and Twilio for SMS OTP. For Indian SMS, a DLT-registered provider such as MSG91 may be required. Swap it in `server/src/otp.js`.
-4. Set `ADMIN_EMAILS` and SMTP so wrong-details reports reach you. Set `AUTO_APPROVE_KYC=false`. KYC has no admin review screen yet (wrong-details refunds do), so review KYC records directly in the database or extend the admin screen.
-5. Host the API over HTTPS and back up `server/data/`. SQLite is fine for a pilot; move to Postgres for scale.
-6. For Play Store builds, add a Google Maps API key to `sira-stay/app.json` (`react-native-maps` plugin) and build with EAS (`npx eas-cli build`).
+4. Set `ADMIN_EMAILS` and SMTP so wrong-details reports reach you. Set `AUTO_APPROVE_KYC=false`. KYC has no admin review screen yet (wrong-details refunds and listing verification do), so review KYC records directly in the database or extend the admin screen.
+5. For **Continue with Google**, add the Play Store app-signing SHA-1 to the Android OAuth client and set `GOOGLE_CLIENT_IDS` (see [Continue with Google](#continue-with-google)).
+6. Host the API over HTTPS and back up `server/data/`. SQLite is fine for a pilot; move to Postgres for scale.
+7. For Play Store builds, set `GOOGLE_MAPS_API_KEY` (see [Maps in an installed build](#maps-in-an-installed-build-google-maps-key)) and add the Play Store app-signing SHA-1 to the key's restrictions. Build with EAS (`npx eas-cli build`).
 
 ## Tamil quick start (தமிழ்)
 

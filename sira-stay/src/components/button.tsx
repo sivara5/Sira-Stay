@@ -18,12 +18,12 @@ type Props = {
 };
 
 const palette: Record<Variant, { bg: string; fg: string; border: string }> = {
-  primary: { bg: colors.primary, fg: colors.white, border: colors.primary },
-  secondary: { bg: colors.primarySoft, fg: colors.primaryDark, border: colors.primarySoft },
-  outline: { bg: colors.white, fg: colors.text, border: colors.border },
+  primary: { bg: colors.primary, fg: colors.onPrimary, border: colors.primary },
+  secondary: { bg: colors.primarySoft, fg: colors.primaryLight, border: colors.primarySoft },
+  outline: { bg: colors.card, fg: colors.text, border: colors.border },
   ghost: { bg: 'transparent', fg: colors.primary, border: 'transparent' },
-  danger: { bg: colors.white, fg: colors.danger, border: colors.dangerSoft },
-  whatsapp: { bg: '#25D366', fg: colors.white, border: '#25D366' },
+  danger: { bg: 'transparent', fg: colors.danger, border: colors.dangerSoft },
+  whatsapp: { bg: colors.whatsapp, fg: colors.white, border: colors.whatsapp },
 };
 
 export function Button({ title, onPress, variant = 'primary', icon, loading, disabled, small, style }: Props) {
@@ -47,7 +47,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
       ) : (
         <>
           {icon && <Ionicons name={icon} size={small ? 16 : 20} color={p.fg} />}
-          <Text style={[styles.label, small && styles.labelSmall, { color: p.fg }]} numberOfLines={1}>
+          <Text style={[styles.label, small && styles.labelSmall, { color: p.fg }]} numberOfLines={2}>
             {title}
           </Text>
         </>
@@ -59,6 +59,7 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
 const styles = StyleSheet.create({
   base: {
     minHeight: 52,
+    paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -67,9 +68,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  small: { minHeight: 40, paddingHorizontal: 14, borderRadius: radius.sm },
-  label: { fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  small: { minHeight: 40, paddingVertical: 6, paddingHorizontal: 14, borderRadius: radius.sm },
+  // Long labels (e.g. in Tamil or half-width buttons) wrap to a second line instead of being cut off.
+  label: { fontSize: 16, fontWeight: '700', flexShrink: 1, textAlign: 'center' },
   labelSmall: { fontSize: 14 },
-  disabled: { opacity: 0.5 },
+  disabled: { opacity: 0.45 },
   pressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
 });

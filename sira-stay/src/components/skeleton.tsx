@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { StyleSheet, View, useWindowDimensions, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { Easing, interpolate, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
-import { colors, radius, shadow } from '@/constants/theme';
+import { cardStyle, colors, radius } from '@/constants/theme';
 
 /** A grey block with a light band sweeping across it — shown while content loads. */
 export function Skeleton({
@@ -105,9 +105,9 @@ export function ListSkeleton({ rows = 6 }: { rows?: number }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
-  block: { backgroundColor: '#E8EAEE', overflow: 'hidden' },
-  sweep: { position: 'absolute', top: 0, bottom: 0, width: 140, backgroundColor: 'rgba(255,255,255,0.55)' },
-  card: { backgroundColor: colors.white, borderRadius: radius.lg, overflow: 'hidden', ...shadow.card },
+  block: { backgroundColor: colors.elevated, overflow: 'hidden' },
+  sweep: { position: 'absolute', top: 0, bottom: 0, width: 140, backgroundColor: 'rgba(255,255,255,0.06)' },
+  card: { ...cardStyle, overflow: 'hidden' },
   photo: { width: '100%', aspectRatio: 4 / 3 },
   cardBody: { padding: 14, gap: 10 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },

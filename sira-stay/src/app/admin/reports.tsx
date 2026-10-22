@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as WebBrowser from 'expo-web-browser';
 import { useState, type ReactNode } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { ErrorView, Loading } from '@/components/feedback';
-import { colors, radius, shadow } from '@/constants/theme';
-import { api } from '@/lib/api';
+import { cardStyle, colors, radius } from '@/constants/theme';
+import { api, mediaUrl } from '@/lib/api';
 import { districtLabel } from '@/lib/districts';
 import { formatDate, formatTime, hoursUntil, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
@@ -13,7 +14,7 @@ import type { StringKey } from '@/lib/strings';
 import type { AdminOverview, AdminReport } from '@/lib/types';
 import { useQuery } from '@/lib/use-query';
 
-/** Admin: approve/reject wrong-details money refunds, restore hidden listings, read notifications. */
+/** Admin: approve/reject wrong-details money refunds, verify listings, restore hidden listings, read notifications. */
 export default function AdminReports() {
   const { t, lang, errorText } = useI18n();
   const { data, error, loading, refreshing, refresh, reload, setData } = useQuery<AdminOverview>('/admin/reports', { pollMs: 30_000 });
@@ -21,6 +22,7 @@ export default function AdminReports() {
 
   if (loading && !data) return <Loading />;
   if (!data) return <ErrorView error={error} onRetry={reload} />;
+  const listings = data.listings ?? [];
 
   async function act(key: string, path: string) {
     setBusy(key);
@@ -75,7 +77,7 @@ export default function AdminReports() {
               <Line icon="time-outline" text={when(r.reportedAt)} />
               {r.reviewDeadline && (
                 <View style={styles.deadline}>
-                  <Ionicons name="hourglass-outline" size={14} color="#92400E" />
+                  <Ionicons name="hourglass-outline" size={14} color={colors.warning} />
                   <Text style={styles.deadlineText}>{t('admin.autoCreditIn', { hours: hoursUntil(r.reviewDeadline) })}</Text>
                 </View>
               )}
@@ -90,6 +92,54 @@ export default function AdminReports() {
                   onPress={() => approve(r)}
                 />
                 <Button title={t('admin.reject')} icon="close" variant="danger" small style={styles.flex} disabled={busy !== null} onPress={() => reject(r)} />
+              </View>
+            </View>
+          ))
+        )}
+      </Section>
+
+      <Section title={t('admin.listings')} count={listings.length}>
+        {listings.length === 0 ? (
+          <Text style={styles.muted}>{t('admin.noListings')}</Text>
+        ) : (
+          listings.map((l) => (
+            <View key={l.id} style={styles.card}>
+              <Text style={styles.title}>{l.title}</Text>
+              <Text style={styles.muted}>
+                {l.area}, {districtLabel(l.district, lang)}
+              </Text>
+              <Line icon="person-outline" text={l.owner.name ? `${l.owner.name} · ${l.owner.email}` : l.owner.email} />
+              <Line icon="shield-checkmark-outline" text={t('admin.ownerKyc', { status: t(`kyc.${l.owner.kycStatus}`) })} />
+              <Line icon="document-text-outline" text={l.docType ? t(`doc.${l.docType}` as StringKey) : t('admin.noDocument')} />
+              {l.documentUrl && (
+                <Button
+                  title={t('admin.viewDocument')}
+                  icon="open-outline"
+                  variant="outline"
+                  small
+                  onPress={() => WebBrowser.openBrowserAsync(mediaUrl(l.documentUrl) ?? '')}
+                />
+              )}
+              <View style={styles.actions}>
+                <Button
+                  title={l.documentChecked ? t('admin.documentDone') : t('admin.markDocument')}
+                  icon={l.documentChecked ? 'checkmark-circle' : 'document-text-outline'}
+                  variant="secondary"
+                  small
+                  style={styles.flex}
+                  loading={busy === `${l.id}:doc`}
+                  disabled={busy !== null || l.documentChecked || !l.documentUrl}
+                  onPress={() => act(`${l.id}:doc`, `/admin/properties/${l.id}/document-checked`)}
+                />
+                <Button
+                  title={l.adminVerified ? t('admin.verifiedDone') : t('admin.markVerified')}
+                  icon={l.adminVerified ? 'checkmark-circle' : 'shield-checkmark-outline'}
+                  small
+                  style={styles.flex}
+                  loading={busy === `${l.id}:verify`}
+                  disabled={busy !== null || l.adminVerified}
+                  onPress={() => act(`${l.id}:verify`, `/admin/properties/${l.id}/verify`)}
+                />
               </View>
             </View>
           ))
@@ -178,7 +228,9 @@ function Section({ title, count, children }: { title: string; count?: number; ch
   );
 }
 
-function Line({ icon, text }: { icon: 'person-outline' | 'alert-circle-outline' | 'time-outline' | 'flag-outline'; text: string }) {
+type LineIcon = 'person-outline' | 'alert-circle-outline' | 'time-outline' | 'flag-outline' | 'shield-checkmark-outline' | 'document-text-outline';
+
+function Line({ icon, text }: { icon: LineIcon; text: string }) {
   return (
     <View style={styles.line}>
       <Ionicons name={icon} size={15} color={colors.textMuted} />
@@ -195,7 +247,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
   count: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
   countText: { color: colors.white, fontSize: 12, fontWeight: '800' },
-  card: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 14, gap: 6, ...shadow.card },
+  card: { ...cardStyle, padding: 14, gap: 6 },
   title: { fontSize: 16, fontWeight: '700', color: colors.text },
   muted: { fontSize: 14, color: colors.textMuted },
   small: { fontSize: 12, color: colors.textMuted },
@@ -209,11 +261,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentSoft,
+    backgroundColor: colors.warningSoft,
   },
-  deadlineText: { fontSize: 12, fontWeight: '700', color: '#92400E' },
+  deadlineText: { fontSize: 12, fontWeight: '700', color: colors.warning },
   actions: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  note: { backgroundColor: colors.white, borderRadius: radius.md, padding: 12, gap: 4, borderWidth: 1, borderColor: colors.border },
+  note: { backgroundColor: colors.card, borderRadius: radius.md, padding: 12, gap: 4, borderWidth: 1, borderColor: colors.border },
   noteUnread: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   noteTitle: { fontSize: 14, color: colors.text },
   bold: { fontWeight: '800' },

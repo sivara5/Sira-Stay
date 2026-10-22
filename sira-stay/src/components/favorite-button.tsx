@@ -44,7 +44,7 @@ export function FavoriteButton({ propertyId, favorite, onChange, size = 22 }: Pr
       accessibilityLabel={value ? t('fav.remove') : t('fav.add')}
       accessibilityState={{ selected: value }}
       style={({ pressed }) => [styles.circle, { width: size + 18, height: size + 18, borderRadius: (size + 18) / 2 }, pressed && styles.pressed]}>
-      <Ionicons name={value ? 'heart' : 'heart-outline'} size={size} color={value ? colors.danger : colors.text} />
+      <Ionicons name={value ? 'heart' : 'heart-outline'} size={size} color={value ? colors.danger : colors.white} />
     </Pressable>
   );
 }
@@ -53,12 +53,7 @@ const styles = StyleSheet.create({
   circle: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
+    backgroundColor: 'rgba(12, 13, 18, 0.65)',
   },
   pressed: { transform: [{ scale: 0.92 }] },
 });

@@ -7,7 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AreaCircle } from '@/components/approx-map';
 import { Button } from '@/components/button';
 import { ErrorView, Loading } from '@/components/feedback';
-import { colors, radius, shadow } from '@/constants/theme';
+import { darkMapProps } from '@/constants/map-style';
+import { colors, radius } from '@/constants/theme';
 import { useI18n } from '@/lib/i18n';
 import { openInMaps } from '@/lib/open-map';
 import type { Booking } from '@/lib/types';
@@ -31,13 +32,14 @@ export default function BookingMap() {
   return (
     <View style={styles.flex}>
       <MapView
+        {...darkMapProps}
         style={StyleSheet.absoluteFill}
         initialRegion={{ latitude: approx.lat, longitude: approx.lng, latitudeDelta: 0.04, longitudeDelta: 0.04 }}
         toolbarEnabled={false}>
         <AreaCircle approx={approx} />
         <Marker coordinate={{ latitude: approx.lat, longitude: approx.lng }} title={property.title} description={property.area} tracksViewChanges={false}>
           <View style={styles.pin}>
-            <Ionicons name="home" size={14} color={colors.white} />
+            <Ionicons name="home" size={14} color={colors.onPrimary} />
             <Text style={styles.pinText} numberOfLines={1}>
               {property.area}
             </Text>
@@ -77,18 +79,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: radius.pill,
   },
-  pinText: { color: colors.white, fontWeight: '700', fontSize: 13 },
+  pinText: { color: colors.onPrimary, fontWeight: '700', fontSize: 13 },
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.white,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     padding: 20,
     gap: 10,
-    ...shadow.card,
   },
   title: { fontSize: 19, fontWeight: '800', color: colors.text },
   line: { flexDirection: 'row', alignItems: 'center', gap: 6 },

@@ -9,6 +9,7 @@ import { all, one, run, tx } from '../db.js';
 import { canonicalDistrict, districtSpellings } from '../districts.js';
 import { PHOTO_COLUMNS, deletePhotoFiles, photoView, queueVariants } from '../images.js';
 import { approximate, isInIndia } from '../geo.js';
+import { canReview, parseReview, saveReview } from '../reviews.js';
 import {
   CATEGORIES,
   expireStaleHolds,
@@ -308,6 +309,19 @@ propertiesRouter.post('/:id/photos/:photoId/main', requireOwner, (req, res) => {
   const ordered = [target, ...photos.filter((p) => p.id !== target.id)];
   tx(() => ordered.forEach((p, position) => run('UPDATE photos SET position = ? WHERE id = ?', position, p.id)));
   res.json({ photos: listPhotos(property.id) });
+});
+
+// ---------------------------------------------------------------- reviews
+
+/** Tenants who unlocked the owner's contact (or booked) rate the property 1–5★; writing again updates it. */
+propertiesRouter.post('/:id/reviews', requireRegistered, (req, res) => {
+  const property = getPropertyOr404(req.params.id);
+  const review = parseReview(req.body);
+  if (!canReview(req.user, property)) {
+    throw new HttpError(403, 'REVIEW_NOT_ALLOWED', 'Only tenants who unlocked the owner’s contact can review this property.');
+  }
+  saveReview({ userId: req.user.id, propertyId: property.id, ...review });
+  res.json({ property: toDetail(property, req.user) });
 });
 
 // ---------------------------------------------------------------- favorites

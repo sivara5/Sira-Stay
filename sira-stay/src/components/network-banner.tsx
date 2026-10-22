@@ -25,13 +25,13 @@ export function NetworkBanner({ topInset }: { topInset: number }) {
 
   return (
     <View style={[styles.bar, { paddingTop: topInset + 6 }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
-      <Ionicons name={reason === 'no_internet' ? 'cloud-offline-outline' : 'warning-outline'} size={20} color={colors.white} />
+      <Ionicons name={reason === 'no_internet' ? 'cloud-offline-outline' : 'warning-outline'} size={20} color={colors.warning} />
       <View style={styles.text}>
         <Text style={styles.title}>{reason === 'no_internet' ? t('net.offline') : t('net.server')}</Text>
         <Text style={styles.subtitle}>{t('net.saved')}</Text>
       </View>
       <Pressable onPress={retry} style={({ pressed: p }) => [styles.retry, (p || pressed) && styles.retryPressed]} accessibilityRole="button" hitSlop={8}>
-        <Ionicons name="refresh" size={15} color={colors.text} />
+        <Ionicons name="refresh" size={15} color={colors.onPrimary} />
         <Text style={styles.retryText}>{t('net.retry')}</Text>
       </Pressable>
     </View>
@@ -45,7 +45,7 @@ export function SavedNote({ savedAt }: { savedAt: number | null }) {
   const iso = new Date(savedAt).toISOString();
   return (
     <View style={styles.note}>
-      <Ionicons name="time-outline" size={13} color="#92400E" />
+      <Ionicons name="time-outline" size={13} color={colors.warning} />
       <Text style={styles.noteText}>{t('net.savedAt', { time: `${formatDate(iso, lang)} · ${formatTime(iso, lang)}` })}</Text>
     </View>
   );
@@ -58,22 +58,24 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 16,
     paddingBottom: 10,
-    backgroundColor: '#1F2937',
+    backgroundColor: colors.warningSoft,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   text: { flex: 1 },
-  title: { color: colors.white, fontSize: 14, fontWeight: '800' },
-  subtitle: { color: '#D1D5DB', fontSize: 12 },
+  title: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  subtitle: { color: colors.textMuted, fontSize: 12 },
   retry: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: colors.white,
+    backgroundColor: colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: radius.pill,
   },
   retryPressed: { opacity: 0.6 },
-  retryText: { fontSize: 13, fontWeight: '800', color: colors.text },
+  retryText: { fontSize: 13, fontWeight: '800', color: colors.onPrimary },
   note: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -82,7 +84,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentSoft,
+    backgroundColor: colors.warningSoft,
   },
-  noteText: { fontSize: 12, fontWeight: '600', color: '#92400E' },
+  noteText: { fontSize: 12, fontWeight: '600', color: colors.warning },
 });

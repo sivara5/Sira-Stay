@@ -7,17 +7,26 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
 import { Button } from '@/components/button';
 import { Banner } from '@/components/feedback';
-import { colors, radius } from '@/constants/theme';
+import { paymentMethodLabel } from '@/components/payment-method-sheet';
+import { cardStyle, colors, radius } from '@/constants/theme';
 import { api, isConnectionError } from '@/lib/api';
 import { districtLabel } from '@/lib/districts';
 import { formatDateLong, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import { onReconnect, onRetry } from '@/lib/network';
 import { addPendingPayment, removePendingPayment, setActiveCheckout } from '@/lib/pending-payments';
-import type { Checkout, PaymentResult } from '@/lib/types';
+import type { Checkout, PaymentMethod, PaymentResult } from '@/lib/types';
 
 type Phase = 'ready' | 'processing' | 'waiting' | 'success' | 'failed' | 'refunded';
-type Params = { paymentId: string; checkout: string; purpose: 'unlock' | 'booking' | 'district_pass'; propertyId: string; bookingId?: string };
+type Params = {
+  paymentId: string;
+  checkout: string;
+  purpose: 'unlock' | 'booking' | 'district_pass';
+  propertyId: string;
+  bookingId?: string;
+  /** Chosen in the payment sheet; checkout opens straight on it. Bookings show every method. */
+  method?: PaymentMethod;
+};
 
 const RECHECK_MS = 15_000;
 
@@ -141,7 +150,7 @@ export default function CheckoutScreen() {
     return (
       <WebView
         originWhitelist={['*']}
-        source={{ html: razorpayHtml(checkout), baseUrl: 'https://checkout.razorpay.com' }}
+        source={{ html: razorpayHtml(checkout, params.method), baseUrl: 'https://checkout.razorpay.com' }}
         onMessage={onRazorpayMessage}
         setSupportMultipleWindows={false}
         onShouldStartLoadWithRequest={(req) => {
@@ -153,6 +162,7 @@ export default function CheckoutScreen() {
           return true;
         }}
         startInLoadingState
+        style={styles.webview}
         renderLoading={() => <ActivityIndicator style={StyleSheet.absoluteFill} color={colors.primary} />}
       />
     );
@@ -184,11 +194,11 @@ export default function CheckoutScreen() {
             }
           />
         )}
-        {phase === 'refunded' && <Result icon="refresh-circle" color={colors.accent} title={t('pay.refundedTitle')} body={t('pay.refundedMsg')} />}
+        {phase === 'refunded' && <Result icon="refresh-circle" color={colors.warning} title={t('pay.refundedTitle')} body={t('pay.refundedMsg')} />}
         {phase === 'failed' && <Result icon="close-circle" color={colors.danger} title={t('pay.failedTitle')} body={error ?? t('pay.failedMsg')} />}
         {phase === 'waiting' && (
           <>
-            <Result icon="cloud-offline-outline" color={colors.accent} title={t('pay.waitingTitle')} body={t('pay.waitingMsg')} />
+            <Result icon="cloud-offline-outline" color={colors.warning} title={t('pay.waitingTitle')} body={t('pay.waitingMsg')} />
             <ActivityIndicator color={colors.primary} />
           </>
         )}
@@ -197,7 +207,7 @@ export default function CheckoutScreen() {
           <View style={styles.card}>
             <View style={styles.merchant}>
               <View style={styles.logo}>
-                <Ionicons name="home" size={20} color={colors.white} />
+                <Ionicons name="home" size={20} color={colors.onPrimary} />
               </View>
               <View style={styles.flex}>
                 <Text style={styles.merchantName}>{checkout.name}</Text>
@@ -211,8 +221,8 @@ export default function CheckoutScreen() {
               <Text style={styles.amount}>{amount}</Text>
             </View>
             <View style={styles.method}>
-              <Ionicons name="phone-portrait-outline" size={20} color={colors.primary} />
-              <Text style={styles.methodText}>{t('pay.method')}</Text>
+              <Ionicons name={params.method === 'card' ? 'card-outline' : 'phone-portrait-outline'} size={20} color={colors.primary} />
+              <Text style={styles.methodText}>{params.method ? t(paymentMethodLabel[params.method]) : t('pay.method')}</Text>
               <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
             </View>
             <Banner tone="warning" icon="flask-outline">
@@ -278,8 +288,19 @@ function Result({ icon, color, title, body }: { icon: ResultIcon; color: string;
   );
 }
 
+/**
+ * Razorpay "instruments" for the method chosen in the app, so checkout opens straight on it:
+ * one UPI app via intent (Google Pay / PhonePe), any UPI app, or debit/credit cards.
+ */
+const INSTRUMENTS: Record<PaymentMethod, Record<string, unknown>> = {
+  gpay: { method: 'upi', flows: ['intent'], apps: ['google_pay'] },
+  phonepe: { method: 'upi', flows: ['intent'], apps: ['phonepe'] },
+  upi: { method: 'upi' },
+  card: { method: 'card', types: ['debit', 'credit'] },
+};
+
 /** Razorpay Standard Checkout page; results are posted back to the app and verified on the server. */
-function razorpayHtml(c: Checkout) {
+function razorpayHtml(c: Checkout, method?: PaymentMethod) {
   const options = {
     key: c.keyId,
     amount: c.amount,
@@ -287,12 +308,21 @@ function razorpayHtml(c: Checkout) {
     name: c.name,
     description: c.description,
     order_id: c.orderId,
-    prefill: { email: c.prefill.email, contact: c.prefill.contact ?? undefined },
-    theme: { color: colors.primary },
+    prefill: { email: c.prefill.email, contact: c.prefill.contact ?? undefined, ...(method && { method: method === 'card' ? 'card' : 'upi' }) },
+    theme: { color: colors.primary, backdrop_color: colors.background },
+    ...(method && {
+      config: {
+        display: {
+          blocks: { chosen: { name: method === 'card' ? 'Debit / Credit card' : 'UPI', instruments: [INSTRUMENTS[method]] } },
+          sequence: ['block.chosen'],
+          preferences: { show_default_blocks: false },
+        },
+      },
+    }),
   };
   const json = JSON.stringify(options).replace(/</g, '\\u003c');
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script></head><body style="background:#fff"><script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script></head><body style="background:${colors.background}"><script>
 function send(m){window.ReactNativeWebView.postMessage(JSON.stringify(m));}
 var options=${json};
 options.handler=function(r){send({type:'success',data:r});};
@@ -304,12 +334,13 @@ rzp.open();
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface },
+  safe: { flex: 1, backgroundColor: colors.background },
+  webview: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, gap: 16, flexGrow: 1 },
   flex: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 48, flexGrow: 1 },
   muted: { fontSize: 14, color: colors.textMuted },
-  card: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 16, gap: 16 },
+  card: { ...cardStyle, padding: 16, gap: 16 },
   merchant: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   logo: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   merchantName: { fontSize: 17, fontWeight: '800', color: colors.text },
@@ -323,11 +354,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
   },
-  methodText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.text },
+  methodText: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.text },
   secure: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   secureText: { fontSize: 12, color: colors.textMuted },
   resultTitle: { fontSize: 24, fontWeight: '800', color: colors.text, textAlign: 'center' },
   resultBody: { fontSize: 15, color: colors.textMuted, textAlign: 'center', lineHeight: 22, paddingHorizontal: 12 },
-  footer: { padding: 16, gap: 8, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.border },
+  footer: { padding: 16, gap: 8, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border },
 });

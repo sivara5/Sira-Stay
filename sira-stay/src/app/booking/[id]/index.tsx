@@ -94,7 +94,9 @@ export default function BookingDetails() {
         </View>
       )}
 
-      {b.status === 'CONFIRMED' && <ReviewCard booking={b} onSaved={(booking) => setData({ booking })} />}
+      {b.status === 'CONFIRMED' && (
+        <ReviewCard<{ booking: Booking }> myReview={b.myReview} path={`/bookings/${b.id}/review`} onSaved={setData} />
+      )}
 
       <View style={styles.actions}>
         {b.status === 'CONFIRMED' && (
@@ -121,13 +123,13 @@ export default function BookingDetails() {
 const styles = StyleSheet.create({
   content: { padding: 16, gap: 16 },
   flex: { flex: 1 },
-  cover: { width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg, backgroundColor: colors.surface },
+  cover: { width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg, backgroundColor: colors.card },
   titleBlock: { gap: 6 },
   title: { fontSize: 22, fontWeight: '800', color: colors.text },
   muted: { fontSize: 14, color: colors.textMuted },
-  rows: { gap: 10, backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16 },
+  rows: { gap: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 16 },
   sectionTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
-  ownerCard: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 16, gap: 8 },
+  ownerCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 16, gap: 8 },
   ownerName: { fontSize: 16, fontWeight: '700', color: colors.text },
   actions: { flexDirection: 'row', gap: 10 },
 });

@@ -6,15 +6,15 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sirastay",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0C0D12",
     "ios": {
-      "icon": "./assets/expo.icon",
       "bundleIdentifier": "in.sirastay.app"
     },
     "android": {
       "package": "in.sirastay.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E7F5F1",
+        "backgroundColor": "#0C0D12",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -30,9 +30,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0E7C66",
+          "backgroundColor": "#0C0D12",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 220
         }
       ],
       "@react-native-community/datetimepicker",

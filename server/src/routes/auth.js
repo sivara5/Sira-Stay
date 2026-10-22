@@ -5,6 +5,7 @@ import { Router } from 'express';
 import { markOnboarded, registrationStep, requireAuth, requireRegistered, toMe } from '../auth.js';
 import { config } from '../config.js';
 import { one, run } from '../db.js';
+import { verifyGoogleIdToken } from '../google.js';
 import { issueOtp, verifyOtp } from '../otp.js';
 import { moveUpload, upload, withUploadCleanup } from '../uploads.js';
 import {
@@ -41,19 +42,48 @@ authRouter.post('/email/start', async (req, res) => {
   res.json({ ok: true, devCode });
 });
 
-authRouter.post('/email/verify', (req, res) => {
-  const email = emailFrom(req.body);
-  verifyOtp('email', email, req.body?.code);
+/** New accounts start in the app's current language; returning accounts keep theirs. */
+function createUser(email, body, extra = {}) {
+  const language = body?.language === 'ta' ? 'ta' : 'en';
+  run(
+    'INSERT INTO users (id, email, language, name, google_sub, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    newId(),
+    email,
+    language,
+    extra.name ?? null,
+    extra.googleSub ?? null,
+    nowIso(),
+  );
+  return one('SELECT * FROM users WHERE email = ?', email);
+}
 
-  let user = one('SELECT * FROM users WHERE email = ?', email);
-  if (!user) {
-    const language = req.body?.language === 'ta' ? 'ta' : 'en';
-    run('INSERT INTO users (id, email, language, created_at) VALUES (?, ?, ?, ?)', newId(), email, language, nowIso());
-    user = one('SELECT * FROM users WHERE email = ?', email);
-  }
+function startSession(res, user) {
   const token = newToken();
   run('INSERT INTO sessions (token_hash, user_id, created_at) VALUES (?, ?, ?)', sha256(token), user.id, nowIso());
   res.json({ token, user: toMe(user) });
+}
+
+authRouter.post('/email/verify', (req, res) => {
+  const email = emailFrom(req.body);
+  verifyOtp('email', email, req.body?.code);
+  startSession(res, one('SELECT * FROM users WHERE email = ?', email) ?? createUser(email, req.body));
+});
+
+/**
+ * "Continue with Google": the app sends Google's ID token. Google has verified the email, so it signs in
+ * the account with that email (linking it to Google) or creates one; registration then continues as usual.
+ */
+authRouter.post('/google', async (req, res) => {
+  const google = await verifyGoogleIdToken(req.body?.idToken);
+  let user = one('SELECT * FROM users WHERE google_sub = ?', google.sub) ?? one('SELECT * FROM users WHERE email = ?', google.email);
+  if (user) {
+    if (!user.google_sub) run('UPDATE users SET google_sub = ? WHERE id = ?', google.sub, user.id);
+    if (!user.name && google.name) run('UPDATE users SET name = ? WHERE id = ?', google.name, user.id);
+    user = one('SELECT * FROM users WHERE id = ?', user.id);
+  } else {
+    user = createUser(google.email, req.body, { name: google.name, googleSub: google.sub });
+  }
+  startSession(res, user);
 });
 
 // Step 2 — "Are you a Tenant or a House Owner?"
@@ -112,6 +142,11 @@ authRouter.post(
     if (!req.user.phone_verified) throw new HttpError(400, 'PHONE_REQUIRED', 'Verify your mobile number first.');
 
     const name = requireString(req.body?.name, 'Full name', { min: 2, max: 80 });
+    // Shown to tenants who unlock this owner's contact.
+    const contactPhone = normalizeIndianPhone(req.body?.contactPhone);
+    if (!contactPhone) throw new HttpError(400, 'INVALID_PHONE', 'Enter a valid 10-digit mobile number.', { field: 'contactPhone' });
+    const whatsapp = normalizeIndianPhone(req.body?.whatsapp);
+    if (!whatsapp) throw new HttpError(400, 'INVALID_PHONE', 'Enter a valid 10-digit WhatsApp number.', { field: 'whatsapp' });
     const idType = req.body?.idType;
     const idNumber = String(req.body?.idNumber ?? '').replace(/[\s-]/g, '').toUpperCase();
     if (!ID_RULES[idType]) throw new HttpError(400, 'VALIDATION', 'Choose a valid ID type.', { field: 'idType' });
@@ -122,9 +157,11 @@ authRouter.post(
 
     const stored = moveUpload(req.file, path.join(config.privateDir, 'kyc'), `${req.user.id}-${Date.now()}`, ['image', 'pdf']);
     run(
-      `UPDATE users SET name = ?, kyc_status = ?, kyc_id_type = ?, kyc_id_last4 = ?, kyc_id_enc = ?, kyc_file = ?
-        WHERE id = ?`,
+      `UPDATE users SET name = ?, contact_phone = ?, whatsapp = ?, kyc_status = ?, kyc_id_type = ?, kyc_id_last4 = ?,
+         kyc_id_enc = ?, kyc_file = ? WHERE id = ?`,
       name,
+      contactPhone,
+      whatsapp,
       config.autoApproveKyc ? 'verified' : 'pending',
       idType,
       idNumber.slice(-4),

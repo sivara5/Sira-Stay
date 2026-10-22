@@ -79,6 +79,11 @@ export const config = {
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean),
   bookingHoldMinutes: Number(env.BOOKING_HOLD_MINUTES || 10),
+  // "Continue with Google": OAuth client IDs whose ID tokens are accepted (the app's web client ID).
+  googleClientIds: (env.GOOGLE_CLIENT_IDS || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean),
   paymentProvider: razorpay.keyId && razorpay.keySecret ? 'razorpay' : 'mock',
   razorpay,
   smtp,

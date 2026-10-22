@@ -46,6 +46,7 @@ app.get('/health', (_req, res) =>
     paymentProvider: config.paymentProvider,
     emailProvider: config.emailProvider,
     smsProvider: config.smsProvider,
+    googleSignIn: config.googleClientIds.length > 0,
     unlockFee: config.unlockFeePaise / 100,
     districtPassFee: config.districtPassFeePaise / 100,
   }),
@@ -109,5 +110,5 @@ app.listen(config.port, '0.0.0.0', () => {
     .map((i) => `http://${i.address}:${config.port}`);
   console.log(`Sira Stay API listening on port ${config.port}`);
   console.log(`  LAN: ${lan.join(', ') || 'n/a'}`);
-  console.log(`  payments=${config.paymentProvider} email=${config.emailProvider} sms=${config.smsProvider}`);
+  console.log(`  payments=${config.paymentProvider} email=${config.emailProvider} sms=${config.smsProvider} google=${config.googleClientIds.length > 0}`);
 });

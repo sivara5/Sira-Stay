@@ -9,8 +9,10 @@ import {
   findBlockingBooking,
   getPropertyOr404,
   hasContactAccess,
+  ownerContact,
   toCard,
 } from '../services.js';
+import { myReview, parseReview, saveReview } from '../reviews.js';
 import { HttpError, addDays, addMonths, isDateString, newId, nowIso, todayIST } from '../util.js';
 
 export const bookingsRouter = Router();
@@ -46,12 +48,11 @@ function toBooking(b, user, { withContact = false } = {}) {
       status: card.status,
     },
     payment: payment && { id: payment.id, status: payment.status, refundStatus: payment.refund_status },
-    myReview: one('SELECT rating, comment FROM reviews WHERE booking_id = ?', b.id) ?? null,
+    myReview: myReview(user, property.id),
   };
   // A confirmed booking entitles the tenant to the owner's contact and the exact location (for "Open Map").
   if (withContact && b.status === 'CONFIRMED' && hasContactAccess(user, property)) {
-    const owner = one('SELECT name, phone, whatsapp, available FROM users WHERE id = ?', property.owner_id);
-    booking.owner = { name: owner.name, phone: owner.phone, whatsapp: owner.whatsapp || owner.phone, available: Boolean(owner.available) };
+    booking.owner = ownerContact(property.owner_id);
     const { lat, lng } = exactLocation(property);
     booking.exactLocation = { lat, lng };
   }
@@ -125,22 +126,8 @@ bookingsRouter.post('/:id/review', requireRegistered, (req, res) => {
   if (booking.status !== 'CONFIRMED') {
     throw new HttpError(400, 'REVIEW_NOT_ALLOWED', 'You can rate a property after your booking is confirmed.');
   }
-  const rating = Number(req.body?.rating);
-  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-    throw new HttpError(400, 'VALIDATION', 'Choose a rating from 1 to 5 stars.', { field: 'rating' });
-  }
-  const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim().slice(0, 500) || null : null;
-  run(
-    `INSERT INTO reviews (id, property_id, booking_id, user_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(booking_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment, created_at = excluded.created_at`,
-    newId(),
-    booking.property_id,
-    booking.id,
-    req.user.id,
-    rating,
-    comment,
-    nowIso(),
-  );
+  // Same review as on the property page (one per tenant per property).
+  saveReview({ userId: req.user.id, propertyId: booking.property_id, bookingId: booking.id, ...parseReview(req.body) });
   res.json({ booking: toBooking(booking, req.user, { withContact: true }) });
 });
 

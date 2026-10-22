@@ -13,6 +13,7 @@ import { Banner, EmptyState, ErrorView } from '@/components/feedback';
 import { SavedNote } from '@/components/network-banner';
 import { PropertyCard } from '@/components/property-card';
 import { PropertyListSkeleton } from '@/components/skeleton';
+import { darkMapProps } from '@/constants/map-style';
 import { TAMIL_NADU_REGION, colors, radius } from '@/constants/theme';
 import { rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
@@ -80,6 +81,8 @@ export default function Explore() {
           placeholder={t('explore.search')}
           placeholderTextColor={colors.textMuted}
           style={styles.searchInput}
+          selectionColor={colors.primary}
+          keyboardAppearance="dark"
           returnKeyType="search"
         />
         {search ? (
@@ -110,7 +113,7 @@ export default function Explore() {
           ))}
         </ScrollView>
         <Pressable style={styles.viewToggle} onPress={() => setView(view === 'list' ? 'map' : 'list')}>
-          <Ionicons name={view === 'list' ? 'map-outline' : 'list-outline'} size={16} color={colors.white} />
+          <Ionicons name={view === 'list' ? 'map-outline' : 'list-outline'} size={16} color={colors.onPrimary} />
           <Text style={styles.viewToggleText}>{view === 'list' ? t('explore.map') : t('explore.list')}</Text>
         </Pressable>
       </View>
@@ -175,7 +178,13 @@ function ResultsMap({ properties, origin }: { properties: Card[]; origin: { lat:
 
   return (
     <View style={styles.mapWrap}>
-      <MapView ref={mapRef} style={StyleSheet.absoluteFill} initialRegion={region} showsUserLocation={Boolean(origin)} toolbarEnabled={false}>
+      <MapView
+        {...darkMapProps}
+        ref={mapRef}
+        style={StyleSheet.absoluteFill}
+        initialRegion={region}
+        showsUserLocation={Boolean(origin)}
+        toolbarEnabled={false}>
         {properties.map((p) => (
           <Fragment key={p.id}>
             <AreaCircle approx={p.approxLocation} />
@@ -211,14 +220,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 48,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
   searchInput: { flex: 1, fontSize: 15, color: colors.text },
   tabs: { borderBottomWidth: 1, borderBottomColor: colors.border, marginTop: 8 },
@@ -228,24 +232,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.text,
+    backgroundColor: colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: radius.pill,
   },
-  viewToggleText: { color: colors.white, fontWeight: '700', fontSize: 13 },
+  viewToggleText: { color: colors.onPrimary, fontWeight: '700', fontSize: 13 },
   bannerWrap: { paddingHorizontal: 16, paddingBottom: 8 },
-  list: { padding: 16, paddingTop: 4, gap: 16, backgroundColor: colors.surface, flexGrow: 1 },
+  list: { padding: 16, paddingTop: 4, gap: 16, flexGrow: 1 },
   mapWrap: { flex: 1 },
   mapNote: { position: 'absolute', left: 12, right: 12, bottom: 12 },
   pricePin: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.card,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primary,
   },
-  pricePinBooked: { backgroundColor: colors.accentSoft },
-  pricePinText: { fontWeight: '800', fontSize: 13, color: colors.text },
+  pricePinBooked: { backgroundColor: colors.warningSoft, borderColor: colors.warning },
+  pricePinText: { fontWeight: '800', fontSize: 13, color: colors.primary },
 });

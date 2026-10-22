@@ -22,18 +22,21 @@ import { Button } from '@/components/button';
 import { categoryIcon } from '@/components/category-tabs';
 import { Banner, ErrorView } from '@/components/feedback';
 import { SavedNote } from '@/components/network-banner';
+import { useStartPayment } from '@/components/payment-method-sheet';
 import { ProgressiveImage } from '@/components/progressive-image';
 import { PropertyDetailSkeleton } from '@/components/skeleton';
 import { FavoriteButton } from '@/components/favorite-button';
-import { RatingBadge } from '@/components/rating';
+import { RatingBadge, Stars } from '@/components/rating';
+import { ReviewCard } from '@/components/review-card';
 import { StatusBadge } from '@/components/status-badge';
-import { colors, radius } from '@/constants/theme';
+import { cardStyle, colors, radius } from '@/constants/theme';
 import { ApiError, api, mediaUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { districtLabel } from '@/lib/districts';
 import { formatDate, formatDateLong, formatPhone, hoursUntil, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import type { Checkout, Payment, PropertyDetail } from '@/lib/types';
+import type { StringKey } from '@/lib/strings';
+import type { PropertyDetail, Review, VerificationChecks } from '@/lib/types';
 import { useQuery } from '@/lib/use-query';
 
 export default function PropertyScreen() {
@@ -41,6 +44,7 @@ export default function PropertyScreen() {
   const { t, lang, errorText } = useI18n();
   const { user } = useAuth();
   const { data, error, loading, reload, setData, savedAt } = useQuery<{ property: PropertyDetail }>(`/properties/${id}`);
+  const startPayment = useStartPayment();
   const [busy, setBusy] = useState<'pay' | 'buyPass' | 'pass' | 'credit' | null>(null);
   const [ownerUnreachable, setOwnerUnreachable] = useState(false);
   const callStarted = useRef(false);
@@ -70,17 +74,29 @@ export default function PropertyScreen() {
   if (loading && !data) return <PropertyDetailSkeleton />;
   if (!data) return <ErrorView error={error} onRetry={reload} />;
   const p = data.property;
-  const canBook = !p.isOwner && user?.role !== 'owner' && p.status !== 'WITHDRAWN';
+  // Tenants get the booking bar; while the listing is booked, Book now is disabled and shows until when.
+  const showBookingBar = !p.isOwner && user?.role !== 'owner' && (p.status === 'AVAILABLE' || p.status === 'BOOKED');
+  const booked = p.status === 'BOOKED';
+  const options = p.unlockOptions;
+  // Details saved offline by an older version have no checks/reviews until the fresh copy arrives.
+  const reviews = p.reviews ?? [];
 
-  /** ₹29 single unlock or ₹99 District Pass → Razorpay checkout; the server verifies the payment. */
-  async function pay(body: { purpose: 'unlock' | 'district_pass'; propertyId?: string; district?: string }, key: 'pay' | 'buyPass') {
+  /**
+   * ₹29 single unlock or ₹99 District Pass: the tenant picks Google Pay, PhonePe, another UPI app or
+   * a card, then Razorpay checkout opens on that method. The server verifies the payment.
+   */
+  async function pay(key: 'pay' | 'buyPass') {
     setBusy(key);
     try {
-      const res = await api<{ payment: Payment; checkout: Checkout }>('/payments', { body });
-      router.push({
-        pathname: '/checkout/[paymentId]',
-        params: { paymentId: res.payment.id, checkout: JSON.stringify(res.checkout), purpose: body.purpose, propertyId: p.id },
-      });
+      if (key === 'pay') {
+        await startPayment({ purpose: 'unlock', propertyId: p.id }, { amount: options.price, description: t('pay.unlockFor', { title: p.title }) });
+      } else if (options.district) {
+        const district = districtLabel(options.district, lang);
+        await startPayment(
+          { purpose: 'district_pass', district: options.district },
+          { amount: options.passPrice, description: t('pay.passFor', { district, credits: options.passCredits }) },
+        );
+      }
     } catch (err) {
       if (!(err instanceof ApiError && err.code === 'ALREADY_UNLOCKED')) Alert.alert(t('pay.failedTitle'), errorText(err));
       reload();
@@ -102,8 +118,6 @@ export default function PropertyScreen() {
     }
   }
 
-  const options = p.unlockOptions;
-
   const owner = p.owner;
   const showUnavailable = Boolean(owner && !p.isOwner && (!owner.available || ownerUnreachable));
   const openChat = () => user && router.push(`/chat/${p.id}/${user.id}`);
@@ -124,11 +138,10 @@ export default function PropertyScreen() {
           <SavedNote savedAt={savedAt} />
           <View style={styles.badges}>
             <View style={styles.categoryBadge}>
-              <Ionicons name={categoryIcon[p.category]} size={14} color={colors.primaryDark} />
+              <Ionicons name={categoryIcon[p.category]} size={14} color={colors.primaryLight} />
               <Text style={styles.categoryText}>{t(`cat.${p.category}`)}</Text>
             </View>
             <StatusBadge status={p.status} />
-            {p.verified && <VerifiedTag label={t('card.verified')} />}
           </View>
           <Text style={styles.title}>{p.title}</Text>
           <RatingBadge rating={p.rating} large />
@@ -162,6 +175,10 @@ export default function PropertyScreen() {
             label={t('prop.availableFrom')}
             value={p.availableFrom ? formatDate(p.availableFrom, lang) : t('prop.availableNow')}
           />
+        </View>
+
+        <View style={styles.section}>
+          {p.checks && <VerifiedSection checks={p.checks} />}
         </View>
 
         {/* Owner contact: locked until unlocked (₹29, District Pass credit or free credit) for 6 months */}
@@ -248,7 +265,7 @@ export default function PropertyScreen() {
             <View style={styles.unlockCard}>
               <View style={styles.unlockHeader}>
                 <View style={styles.lockIcon}>
-                  <Ionicons name="lock-closed" size={20} color={colors.white} />
+                  <Ionicons name="lock-closed" size={18} color={colors.onPrimary} />
                 </View>
                 <Text style={styles.unlockTitle}>{t('prop.unlockTitle')}</Text>
               </View>
@@ -284,10 +301,10 @@ export default function PropertyScreen() {
                       />
                     )}
                     <Button
-                      title={t('prop.unlockCta', { price: rupees(options.price) })}
+                      title={t('card.unlockCta', { price: rupees(options.price) })}
                       icon="lock-open"
                       variant={options.freeCredits > 0 ? 'outline' : 'primary'}
-                      onPress={() => pay({ purpose: 'unlock', propertyId: p.id }, 'pay')}
+                      onPress={() => pay('pay')}
                       loading={busy === 'pay'}
                       disabled={busy !== null}
                     />
@@ -295,9 +312,9 @@ export default function PropertyScreen() {
                       <Pressable
                         style={({ pressed }) => [styles.passOffer, pressed && styles.passOfferPressed]}
                         disabled={busy !== null}
-                        onPress={() => pay({ purpose: 'district_pass', district: options.district! }, 'buyPass')}
+                        onPress={() => pay('buyPass')}
                         accessibilityRole="button">
-                        <Ionicons name="ticket-outline" size={22} color={colors.primaryDark} />
+                        <Ionicons name="ticket-outline" size={22} color={colors.primary} />
                         <View style={styles.flex}>
                           <Text style={styles.passOfferTitle}>{t('prop.passOffer', { price: rupees(options.passPrice) })}</Text>
                           <Text style={styles.passOfferBody}>
@@ -311,7 +328,7 @@ export default function PropertyScreen() {
                         {busy === 'buyPass' ? (
                           <ActivityIndicator color={colors.primary} />
                         ) : (
-                          <Ionicons name="chevron-forward" size={18} color={colors.primaryDark} />
+                          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
                         )}
                       </Pressable>
                     )}
@@ -360,6 +377,23 @@ export default function PropertyScreen() {
           )}
         </View>
 
+        <View style={styles.section}>
+          <View style={styles.reviewsHead}>
+            <Text style={styles.sectionTitle}>{t('reviews.title')}</Text>
+            <RatingBadge rating={p.rating} />
+          </View>
+          {p.canReview ? (
+            <ReviewCard<{ property: PropertyDetail }> myReview={p.myReview} path={`/properties/${p.id}/reviews`} onSaved={setData} />
+          ) : (
+            !p.isOwner && <Text style={styles.hint}>{t('reviews.unlockToReview')}</Text>
+          )}
+          {reviews.length === 0 ? (
+            <Text style={styles.muted}>{t('reviews.none')}</Text>
+          ) : (
+            reviews.map((r) => <ReviewItem key={r.id} review={r} />)
+          )}
+        </View>
+
         {p.bookedPeriods.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t('prop.bookedPeriods')}</Text>
@@ -372,16 +406,81 @@ export default function PropertyScreen() {
         )}
       </ScrollView>
 
-      {canBook && (
+      {showBookingBar && (
         <View style={styles.bottomBar}>
           <View style={styles.flex}>
-            <Text style={styles.bottomLabel}>{t('prop.bookingAmount')}</Text>
-            <Text style={styles.bottomAmount}>{rupees(p.bookingAmount)}</Text>
+            {booked ? (
+              <Text style={styles.bookedText}>
+                {p.bookedUntil ? t('card.bookedUntil', { date: formatDate(p.bookedUntil, lang) }) : t('prop.alreadyBooked')}
+              </Text>
+            ) : (
+              <>
+                <Text style={styles.bottomLabel}>{t('prop.bookingAmount')}</Text>
+                <Text style={styles.bottomAmount}>{rupees(p.bookingAmount)}</Text>
+              </>
+            )}
           </View>
-          <Button title={t('prop.bookNow')} onPress={() => router.push(`/book/${p.id}`)} style={styles.bookButton} />
+          <Button
+            title={booked ? t('prop.alreadyBooked') : t('prop.bookNow')}
+            icon={booked ? 'calendar-clear-outline' : undefined}
+            disabled={booked}
+            onPress={() => router.push(`/book/${p.id}`)}
+            style={styles.bookButton}
+          />
         </View>
       )}
     </SafeAreaView>
+  );
+}
+
+const CHECKS: { key: keyof VerificationChecks; done: StringKey; pending: StringKey }[] = [
+  { key: 'ownerKyc', done: 'verify.ownerKyc', pending: 'verify.ownerKycPending' },
+  { key: 'adminVerified', done: 'verify.admin', pending: 'verify.adminPending' },
+  { key: 'documentChecked', done: 'verify.document', pending: 'verify.documentPending' },
+];
+
+/** Owner KYC verified · Admin verified · Property document checked. */
+function VerifiedSection({ checks }: { checks: VerificationChecks }) {
+  const { t } = useI18n();
+  const all = CHECKS.every((c) => checks[c.key]);
+  return (
+    <View style={styles.verifiedCard}>
+      <View style={styles.verifiedHead}>
+        <Ionicons name="shield-checkmark" size={20} color={all ? colors.success : colors.primary} />
+        <Text style={styles.sectionTitle}>{t('verify.title')}</Text>
+      </View>
+      {CHECKS.map((c) => {
+        const ok = checks[c.key];
+        return (
+          <View key={c.key} style={styles.checkRow}>
+            <Ionicons name={ok ? 'checkmark-circle' : 'time-outline'} size={18} color={ok ? colors.success : colors.textMuted} />
+            <Text style={[styles.checkText, !ok && styles.checkPending]}>{t(ok ? c.done : c.pending)}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function ReviewItem({ review }: { review: Review }) {
+  const { t, lang } = useI18n();
+  const name = review.author ?? t('reviews.anonymous');
+  return (
+    <View style={styles.review}>
+      <View style={styles.reviewTop}>
+        <View style={styles.reviewAvatar}>
+          <Text style={styles.reviewAvatarText}>{name.charAt(0).toUpperCase()}</Text>
+        </View>
+        <View style={styles.flex}>
+          <Text style={styles.reviewName}>{name}</Text>
+          <Text style={styles.reviewMeta}>
+            {t(review.via === 'booking' ? 'reviews.viaBooking' : 'reviews.viaUnlock')} · {formatDate(review.createdAt, lang)}
+          </Text>
+        </View>
+        <Stars value={review.rating} />
+      </View>
+      {review.comment ? <Text style={styles.body}>{review.comment}</Text> : null}
+    </View>
   );
 }
 
@@ -435,15 +534,6 @@ function InfoTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function VerifiedTag({ label }: { label: string }) {
-  return (
-    <View style={styles.verified}>
-      <Ionicons name="shield-checkmark" size={13} color={colors.primary} />
-      <Text style={styles.verifiedText}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { paddingBottom: 24 },
@@ -461,16 +551,14 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: radius.pill,
   },
-  categoryText: { fontSize: 12, fontWeight: '700', color: colors.primaryDark },
-  verified: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  verifiedText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  categoryText: { fontSize: 12, fontWeight: '700', color: colors.primaryLight },
   title: { fontSize: 24, fontWeight: '800', color: colors.text },
   line: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   muted: { fontSize: 15, color: colors.textMuted, flexShrink: 1 },
-  rent: { fontSize: 26, fontWeight: '900', color: colors.text, marginTop: 4 },
+  rent: { fontSize: 26, fontWeight: '900', color: colors.primary, marginTop: 4 },
   perMonth: { fontSize: 15, fontWeight: '500', color: colors.textMuted },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 16, paddingTop: 16 },
-  tile: { width: '48%', flexGrow: 1, backgroundColor: colors.surface, borderRadius: radius.md, padding: 12, gap: 2 },
+  tile: { ...cardStyle, width: '48%', flexGrow: 1, borderRadius: radius.md, padding: 12, gap: 2 },
   tileLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   tileValue: { fontSize: 16, color: colors.text, fontWeight: '700' },
   body: { fontSize: 15, color: colors.text, lineHeight: 22, flexShrink: 1 },
@@ -479,12 +567,17 @@ const styles = StyleSheet.create({
   amenity: { flexDirection: 'row', alignItems: 'center', gap: 6, width: '46%' },
   amenityText: { fontSize: 14, color: colors.text },
   mapCard: { borderRadius: radius.lg, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
-  unlockCard: { borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primarySoft, padding: 16, gap: 12 },
+  verifiedCard: { ...cardStyle, padding: 16, gap: 10 },
+  verifiedHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  checkText: { fontSize: 15, color: colors.text, fontWeight: '600', flexShrink: 1 },
+  checkPending: { color: colors.textMuted, fontWeight: '400' },
+  unlockCard: { ...cardStyle, borderWidth: 1.5, borderColor: colors.primary, padding: 16, gap: 12 },
   unlockHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  lockIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  unlockTitle: { flex: 1, fontSize: 17, fontWeight: '800', color: colors.primaryDark },
-  unlockBody: { fontSize: 15, color: colors.text, lineHeight: 21 },
-  masked: { backgroundColor: colors.white, borderRadius: radius.md, padding: 12, gap: 6 },
+  lockIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  unlockTitle: { flex: 1, fontSize: 17, fontWeight: '800', color: colors.text },
+  unlockBody: { fontSize: 15, color: colors.textMuted, lineHeight: 21 },
+  masked: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 12, gap: 6 },
   maskedText: { fontSize: 15, color: colors.textMuted, letterSpacing: 1 },
   policy: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
   passOffer: {
@@ -496,10 +589,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: colors.primary,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
   },
   passOfferPressed: { backgroundColor: colors.primarySoft },
-  passOfferTitle: { fontSize: 15, fontWeight: '800', color: colors.primaryDark },
+  passOfferTitle: { fontSize: 15, fontWeight: '800', color: colors.primaryLight },
   passOfferBody: { fontSize: 13, color: colors.textMuted },
   unlockedTill: {
     flexDirection: 'row',
@@ -512,12 +605,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.successSoft,
   },
   unlockedTillText: { fontSize: 13, fontWeight: '700', color: colors.success },
-  ownerCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 12 },
+  ownerCard: { ...cardStyle, padding: 16, gap: 12 },
   ownerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.white, fontSize: 20, fontWeight: '800' },
+  avatarText: { color: colors.onPrimary, fontSize: 20, fontWeight: '800' },
   ownerName: { fontSize: 17, fontWeight: '700', color: colors.text },
   contactButtons: { flexDirection: 'row', gap: 10 },
+  reviewsHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  review: { ...cardStyle, padding: 14, gap: 8 },
+  reviewTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  reviewAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.elevated, alignItems: 'center', justifyContent: 'center' },
+  reviewAvatarText: { color: colors.primary, fontSize: 15, fontWeight: '800' },
+  reviewName: { fontSize: 15, fontWeight: '700', color: colors.text },
+  reviewMeta: { fontSize: 12, color: colors.textMuted },
   photoMeta: {
     position: 'absolute',
     bottom: 12,
@@ -539,9 +639,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.white,
+    backgroundColor: colors.card,
   },
   bottomLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   bottomAmount: { fontSize: 20, fontWeight: '900', color: colors.text },
+  bookedText: { fontSize: 14, fontWeight: '700', color: colors.warning },
   bookButton: { paddingHorizontal: 28 },
 });

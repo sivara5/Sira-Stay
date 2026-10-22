@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
   phone TEXT UNIQUE,
   phone_verified INTEGER NOT NULL DEFAULT 0,
   whatsapp TEXT,
+  contact_phone TEXT,                           -- owner's mobile from KYC; tenants see it after unlocking
+  google_sub TEXT,                              -- Google account ID when signed in with Google
   name TEXT,
   language TEXT NOT NULL DEFAULT 'en',
   available INTEGER NOT NULL DEFAULT 1,
@@ -67,6 +69,10 @@ CREATE TABLE IF NOT EXISTS properties (
   doc_type TEXT,
   doc_file TEXT,
   verification TEXT NOT NULL DEFAULT 'pending', -- pending | verified
+  admin_verified_at TEXT,                       -- an admin checked the listing
+  admin_verified_by TEXT,
+  doc_checked_at TEXT,                          -- an admin checked the ownership document
+  doc_checked_by TEXT,
   status TEXT NOT NULL DEFAULT 'active',        -- active | withdrawn
   available_from TEXT,
   is_demo INTEGER NOT NULL DEFAULT 0,
@@ -210,14 +216,16 @@ CREATE TABLE IF NOT EXISTS favorites (
   PRIMARY KEY (user_id, property_id)
 );
 
+-- One review per tenant per property, from tenants who unlocked the owner's contact (or booked).
 CREATE TABLE IF NOT EXISTS reviews (
   id TEXT PRIMARY KEY,
   property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
-  booking_id TEXT NOT NULL UNIQUE REFERENCES bookings(id),
   user_id TEXT NOT NULL REFERENCES users(id),
+  booking_id TEXT REFERENCES bookings(id),      -- set when written from a confirmed booking
   rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
   comment TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  UNIQUE (property_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS reviews_property ON reviews(property_id);
 `);
@@ -302,7 +310,46 @@ for (const column of ['review_status', 'review_deadline', 'reviewed_at', 'review
   if (!hasColumn('unlocks', column)) db.exec(`ALTER TABLE unlocks ADD COLUMN ${column} TEXT`);
 }
 
+// Migration: owner contact mobile (asked in KYC) and "Continue with Google".
+for (const column of ['contact_phone', 'google_sub']) {
+  if (!hasColumn('users', column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT`);
+}
+
+// Migration: admin checks shown in the listing's "Verified" section. Demo listings count as checked.
+if (!hasColumn('properties', 'admin_verified_at')) {
+  migrate(() => {
+    for (const column of ['admin_verified_at', 'admin_verified_by', 'doc_checked_at', 'doc_checked_by']) {
+      db.exec(`ALTER TABLE properties ADD COLUMN ${column} TEXT`);
+    }
+    db.exec(`UPDATE properties SET admin_verified_at = created_at, admin_verified_by = 'demo',
+               doc_checked_at = created_at, doc_checked_by = 'demo' WHERE is_demo = 1`);
+  });
+}
+
+// Migration: reviews now come from tenants who unlocked the contact, not only bookings — one per tenant
+// per property, booking optional. Keeps each tenant's latest review of a property.
+if (db.prepare("SELECT \"notnull\" AS required FROM pragma_table_info('reviews') WHERE name = 'booking_id'").get()?.required) {
+  migrate(() =>
+    db.exec(`
+      ALTER TABLE reviews RENAME TO reviews_legacy;
+      CREATE TABLE reviews (
+        id TEXT PRIMARY KEY, property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id), booking_id TEXT REFERENCES bookings(id),
+        rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5), comment TEXT, created_at TEXT NOT NULL,
+        UNIQUE (property_id, user_id)
+      );
+      INSERT INTO reviews (id, property_id, user_id, booking_id, rating, comment, created_at)
+        SELECT id, property_id, user_id, booking_id, rating, comment, created_at FROM reviews_legacy r
+         WHERE r.rowid = (SELECT x.rowid FROM reviews_legacy x WHERE x.property_id = r.property_id AND x.user_id = r.user_id
+                           ORDER BY x.created_at DESC LIMIT 1);
+      DROP TABLE reviews_legacy;
+    `),
+  );
+}
+
 db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS users_google ON users(google_sub) WHERE google_sub IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS reviews_property ON reviews(property_id);
   CREATE INDEX IF NOT EXISTS payments_order ON payments(provider_order_id);
   CREATE INDEX IF NOT EXISTS unlocks_user_property ON unlocks(user_id, property_id, status);
 `);

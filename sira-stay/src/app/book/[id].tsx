@@ -8,7 +8,7 @@ import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
 import { DateField } from '@/components/date-field';
 import { Banner, ErrorView, Loading } from '@/components/feedback';
-import { colors, radius } from '@/constants/theme';
+import { cardStyle, colors, radius } from '@/constants/theme';
 import { api, mediaUrl } from '@/lib/api';
 import { addMonths, formatDate, fromDateString, rupees, todayString } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
@@ -103,7 +103,7 @@ export default function BookScreen() {
           <Banner tone={overlaps ? 'danger' : 'warning'} title={t('book.unavailable')} icon="calendar-clear-outline">
             <View>
               {p.bookedPeriods.map((b) => (
-                <Text key={b.moveInDate} style={[styles.periodText, { color: overlaps ? colors.danger : '#92400E' }]}>
+                <Text key={b.moveInDate} style={[styles.periodText, { color: overlaps ? colors.danger : colors.warning }]}>
                   • {formatDate(b.moveInDate, lang)} – {formatDate(b.endDate, lang)}
                 </Text>
               ))}
@@ -132,7 +132,7 @@ export default function BookScreen() {
           icon="lock-closed"
           onPress={pay}
           loading={submitting}
-          disabled={overlaps || p.status === 'WITHDRAWN'}
+          disabled={overlaps || p.status !== 'AVAILABLE'}
         />
       </View>
     </SafeAreaView>
@@ -153,19 +153,19 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 20 },
   flex: { flex: 1, gap: 2 },
   propertyRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  cover: { width: 84, height: 84, borderRadius: radius.md, backgroundColor: colors.surface },
+  cover: { width: 84, height: 84, borderRadius: radius.md, backgroundColor: colors.card },
   propertyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   muted: { fontSize: 14, color: colors.textMuted },
   group: { gap: 8 },
   label: { fontSize: 15, fontWeight: '700', color: colors.text },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   periodText: { fontSize: 14, lineHeight: 20 },
-  summary: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 16, gap: 8 },
+  summary: { ...cardStyle, padding: 16, gap: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
   rowValue: { fontSize: 14, fontWeight: '600', color: colors.text },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
-  payLabel: { fontSize: 14, fontWeight: '700', color: colors.primaryDark },
-  payAmount: { fontSize: 34, fontWeight: '900', color: colors.text },
+  payLabel: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  payAmount: { fontSize: 34, fontWeight: '900', color: colors.primary },
   note: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
   footer: { padding: 16, borderTopWidth: 1, borderTopColor: colors.border },
 });

@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   list: { flexGrow: 1, backgroundColor: colors.background },
   separator: { height: 1, backgroundColor: colors.border, marginLeft: 84 },
   row: { flexDirection: 'row', gap: 12, padding: 16, alignItems: 'center' },
-  avatar: { width: 56, height: 56, borderRadius: radius.md, backgroundColor: colors.surface },
+  avatar: { width: 56, height: 56, borderRadius: radius.md, backgroundColor: colors.card },
   body: { flex: 1, gap: 2 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   name: { fontSize: 16, fontWeight: '700', color: colors.text, flex: 1 },
@@ -76,5 +76,5 @@ const styles = StyleSheet.create({
   preview: { fontSize: 14, color: colors.textMuted, flex: 1 },
   previewUnread: { color: colors.text, fontWeight: '600' },
   badge: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  badgeText: { color: colors.white, fontSize: 12, fontWeight: '800' },
+  badgeText: { color: colors.onPrimary, fontSize: 12, fontWeight: '800' },
 });

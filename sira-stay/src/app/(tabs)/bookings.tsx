@@ -7,7 +7,7 @@ import { EmptyState, ErrorView, Loading } from '@/components/feedback';
 import { SavedNote } from '@/components/network-banner';
 import { ProgressiveImage } from '@/components/progressive-image';
 import { StatusBadge } from '@/components/status-badge';
-import { colors, radius, shadow } from '@/constants/theme';
+import { cardStyle, colors, radius } from '@/constants/theme';
 import { formatDate, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { Booking } from '@/lib/types';
@@ -92,9 +92,9 @@ function BookingCard({ booking: b }: { booking: Booking }) {
 const styles = StyleSheet.create({
   list: { padding: 16, gap: 16, flexGrow: 1 },
   flex: { flex: 1 },
-  card: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 14, gap: 14, ...shadow.card },
+  card: { ...cardStyle, padding: 14, gap: 14 },
   header: { flexDirection: 'row', gap: 12 },
-  cover: { width: 76, height: 76, borderRadius: radius.md, backgroundColor: colors.surface },
+  cover: { width: 76, height: 76, borderRadius: radius.md, backgroundColor: colors.elevated },
   headerText: { flex: 1, gap: 4 },
   title: { fontSize: 16, fontWeight: '700', color: colors.text },
   muted: { fontSize: 13, color: colors.textMuted },

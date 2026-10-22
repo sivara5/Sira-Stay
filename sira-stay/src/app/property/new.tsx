@@ -14,6 +14,7 @@ import { Chip } from '@/components/chip';
 import { DateField } from '@/components/date-field';
 import { Banner } from '@/components/feedback';
 import { TextField } from '@/components/text-field';
+import { darkMapProps } from '@/constants/map-style';
 import { TAMIL_NADU_REGION, colors, radius } from '@/constants/theme';
 import { ApiError, api, filePart } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -181,7 +182,7 @@ export default function NewListing() {
         {STEPS.map((key, i) => (
           <View key={key} style={styles.stepItem}>
             <View style={[styles.stepDot, i <= step && styles.stepDotActive]}>
-              {i < step ? <Ionicons name="checkmark" size={14} color={colors.white} /> : <Text style={[styles.stepNum, i <= step && styles.stepNumActive]}>{i + 1}</Text>}
+              {i < step ? <Ionicons name="checkmark" size={14} color={colors.onPrimary} /> : <Text style={[styles.stepNum, i <= step && styles.stepNumActive]}>{i + 1}</Text>}
             </View>
             <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]} numberOfLines={1}>
               {t(key)}
@@ -266,6 +267,7 @@ export default function NewListing() {
                 <Text style={styles.hint}>{t('new.pinHint')}</Text>
                 <View style={[styles.mapBox, errors.location ? styles.mapBoxError : null]}>
                   <MapView
+                    {...darkMapProps}
                     ref={mapRef}
                     style={StyleSheet.absoluteFill}
                     initialRegion={pin ? { ...pin, latitudeDelta: 0.005, longitudeDelta: 0.005 } : TAMIL_NADU_REGION}
@@ -340,7 +342,7 @@ export default function NewListing() {
                       onPress={() =>
                         setPhotos((list) => list.map((x, j) => (j === i ? { ...x, kind: x.kind === 'interior' ? 'exterior' : 'interior' } : x)))
                       }>
-                      <Text style={styles.kindText}>{t(`photo.${p.kind}`)}</Text>
+                      <Text style={[styles.kindText, p.kind === 'exterior' && styles.kindTextExterior]}>{t(`photo.${p.kind}`)}</Text>
                     </Pressable>
                   </View>
                 ))}
@@ -405,7 +407,7 @@ const styles = StyleSheet.create({
   stepDot: { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   stepDotActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   stepNum: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
-  stepNumActive: { color: colors.white },
+  stepNumActive: { color: colors.onPrimary },
   stepLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   stepLabelActive: { color: colors.text, fontWeight: '800' },
   content: { padding: 16, gap: 18 },
@@ -420,10 +422,10 @@ const styles = StyleSheet.create({
   countRow: { gap: 6 },
   count: { fontSize: 16, fontWeight: '800', color: colors.danger },
   countOk: { color: colors.success },
-  progress: { height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' },
+  progress: { height: 6, borderRadius: 3, backgroundColor: colors.elevated, overflow: 'hidden' },
   progressFill: { height: 6, backgroundColor: colors.primary },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  thumb: { width: '100%', height: '100%', borderRadius: radius.md, backgroundColor: colors.surface },
+  thumb: { width: '100%', height: '100%', borderRadius: radius.md, backgroundColor: colors.card },
   remove: {
     position: 'absolute',
     top: 6,
@@ -442,10 +444,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.pill,
-    backgroundColor: colors.info,
+    backgroundColor: colors.overlay,
   },
   kindExterior: { backgroundColor: colors.primary },
   kindText: { color: colors.white, fontSize: 11, fontWeight: '700' },
+  kindTextExterior: { color: colors.onPrimary },
   docPicker: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -457,6 +460,6 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primarySoft,
   },
-  docText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.primaryDark },
+  docText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.primaryLight },
   footer: { flexDirection: 'row', gap: 10, padding: 16, borderTopWidth: 1, borderTopColor: colors.border },
 });

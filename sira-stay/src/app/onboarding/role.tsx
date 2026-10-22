@@ -63,13 +63,13 @@ export default function RoleStep() {
             onPress={() => setRole(r.role)}
             style={[styles.card, active && styles.cardActive]}>
             <View style={[styles.icon, active && styles.iconActive]}>
-              <Ionicons name={r.icon} size={28} color={active ? colors.white : colors.primary} />
+              <Ionicons name={r.icon} size={28} color={active ? colors.onPrimary : colors.primary} />
             </View>
             <View style={styles.text}>
               <Text style={styles.title}>{t(r.title)}</Text>
               <Text style={styles.desc}>{t(r.desc)}</Text>
             </View>
-            <Ionicons name={active ? 'radio-button-on' : 'radio-button-off'} size={24} color={active ? colors.primary : colors.border} />
+            <Ionicons name={active ? 'radio-button-on' : 'radio-button-off'} size={24} color={active ? colors.primary : colors.textMuted} />
           </Pressable>
         );
       })}
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
-    backgroundColor: colors.white,
+    backgroundColor: colors.card,
   },
   cardActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   icon: { width: 52, height: 52, borderRadius: 14, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },

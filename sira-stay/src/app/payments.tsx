@@ -4,7 +4,7 @@ import { Alert, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-n
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
 import { Banner, EmptyState, ErrorView, Loading } from '@/components/feedback';
-import { colors, radius } from '@/constants/theme';
+import { cardStyle, colors } from '@/constants/theme';
 import { api } from '@/lib/api';
 import { formatDate, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
@@ -93,7 +93,7 @@ function PaymentCard({ payment: p, onChanged }: { payment: Payment; onChanged: (
 const styles = StyleSheet.create({
   list: { padding: 16, gap: 12, flexGrow: 1 },
   flex: { flex: 1, gap: 2 },
-  card: { backgroundColor: colors.white, borderRadius: radius.lg, padding: 14, gap: 10, borderWidth: 1, borderColor: colors.border },
+  card: { ...cardStyle, padding: 14, gap: 10 },
   top: { flexDirection: 'row', gap: 12 },
   purpose: { fontSize: 12, fontWeight: '700', color: colors.primary, textTransform: 'uppercase' },
   title: { fontSize: 15, fontWeight: '600', color: colors.text },

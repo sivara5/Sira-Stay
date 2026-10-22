@@ -17,6 +17,7 @@ import {
   unlockWithPass,
 } from '../unlocks.js';
 import { HttpError, nowIso } from '../util.js';
+import { documentFileFromLink, listingsToVerify, markAdminVerified, markDocumentChecked } from '../verification.js';
 
 export const unlocksRouter = Router();
 
@@ -81,9 +82,12 @@ myPassesRouter.get('/', requireRegistered, (req, res) => {
 
 export const adminRouter = Router();
 
+/** Everything the admin screen shows: refund reports, hidden listings, notifications and listings to verify. */
+const overview = () => ({ ...adminOverview(), listings: listingsToVerify() });
+
 adminRouter.get('/reports', requireAdmin, (_req, res) => {
   settleOverdueReviews();
-  res.json(adminOverview());
+  res.json(overview());
 });
 
 /** Approve a pending wrong-details money refund → refunded through Razorpay. */
@@ -91,14 +95,14 @@ adminRouter.post('/reports/:id/approve', requireAdmin, async (req, res) => {
   settleOverdueReviews();
   const { paymentId } = decideRefund(req.params.id, req.user, 'approve');
   await refundPayment(paymentId, 'wrong_details', `Approved by ${req.user.email}`);
-  res.json(adminOverview());
+  res.json(overview());
 });
 
 /** Reject a pending refund → no money; the tenant gets the contact back. */
 adminRouter.post('/reports/:id/reject', requireAdmin, (req, res) => {
   settleOverdueReviews();
   decideRefund(req.params.id, req.user, 'reject');
-  res.json(adminOverview());
+  res.json(overview());
 });
 
 /** Show an automatically hidden listing again. */
@@ -106,10 +110,29 @@ adminRouter.post('/properties/:id/restore', requireAdmin, (req, res) => {
   const property = getPropertyOr404(req.params.id);
   if (property.status !== 'hidden') throw new HttpError(409, 'NOT_HIDDEN', 'This listing is not hidden.');
   run("UPDATE properties SET status = 'active' WHERE id = ?", property.id);
-  res.json(adminOverview());
+  res.json(overview());
 });
 
 adminRouter.post('/notifications/read', requireAdmin, (_req, res) => {
   run('UPDATE admin_notifications SET read_at = ? WHERE read_at IS NULL', nowIso());
-  res.json(adminOverview());
+  res.json(overview());
+});
+
+/** "Admin verified" on the listing's Verified section. */
+adminRouter.post('/properties/:id/verify', requireAdmin, (req, res) => {
+  markAdminVerified(getPropertyOr404(req.params.id), req.user);
+  res.json(overview());
+});
+
+/** "Property document checked" on the listing's Verified section. */
+adminRouter.post('/properties/:id/document-checked', requireAdmin, (req, res) => {
+  markDocumentChecked(getPropertyOr404(req.params.id), req.user);
+  res.json(overview());
+});
+
+/** Opens the private ownership document from a signed 15-minute link (made for admins in the overview). */
+adminRouter.get('/properties/:id/document', (req, res) => {
+  const file = documentFileFromLink(req.params.id, req.query.expires, req.query.sig);
+  res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+  res.sendFile(file, { headers: { 'Content-Disposition': 'inline' } });
 });

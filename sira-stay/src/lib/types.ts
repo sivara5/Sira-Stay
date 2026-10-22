@@ -23,6 +23,8 @@ export type Me = {
   phone: string | null;
   phoneVerified: boolean;
   whatsapp: string | null;
+  /** Mobile number owners give in KYC; tenants see it (with WhatsApp) after unlocking. */
+  contactPhone: string | null;
   name: string | null;
   language: Language;
   available: boolean;
@@ -65,6 +67,8 @@ export type PropertyCard = {
   cover: PhotoView | null;
   photoCount: number;
   verified: boolean;
+  /** Single unlock price in rupees (missing on cards saved offline by older versions). */
+  unlockFee?: number;
   availableFrom: string | null;
   createdAt: string;
   isOwner: boolean;
@@ -91,6 +95,26 @@ export type PropertyDetail = PropertyCard & {
   unlockOptions: UnlockOptions;
   owner: OwnerContact | null;
   exactLocation: (LatLng & { address: string }) | null;
+  checks: VerificationChecks;
+  reviews: Review[];
+  myReview: MyReview | null;
+  /** True when the viewer unlocked the owner's contact (or booked) and may write a review. */
+  canReview: boolean;
+};
+
+export type VerificationChecks = { ownerKyc: boolean; adminVerified: boolean; documentChecked: boolean };
+
+export type MyReview = { rating: number; comment: string | null };
+
+export type Review = {
+  id: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+  /** "Priya S." — first name and initial only. Null when the tenant never gave a name. */
+  author: string | null;
+  /** How the reviewer reached the owner: unlocked contact or a confirmed booking. */
+  via: 'unlock' | 'booking';
 };
 
 export type Unlock = {
@@ -152,6 +176,22 @@ export type AdminOverview = {
   hiddenProperties: { id: string; title: string; area: string; district: string; reporters: number }[];
   notifications: { id: string; kind: string; title: string; body: string; channel: string; createdAt: string; readAt: string | null }[];
   unreadNotifications: number;
+  /** Listings still waiting for the admin's check (document and/or listing verification). */
+  listings: AdminListing[];
+};
+
+export type AdminListing = {
+  id: string;
+  title: string;
+  area: string;
+  district: string;
+  owner: { name: string | null; email: string; kycStatus: Me['kycStatus'] };
+  docType: string | null;
+  /** Short-lived signed link to view the uploaded property document (null if none was uploaded). */
+  documentUrl: string | null;
+  adminVerified: boolean;
+  documentChecked: boolean;
+  createdAt: string;
 };
 
 export type OwnerListing = PropertyCard & {
@@ -203,6 +243,9 @@ export type Payment = {
   propertyTitle?: string;
   propertyWithdrawn?: boolean;
 };
+
+/** How the tenant chose to pay: a UPI app (Google Pay, PhonePe, any other) or a debit/credit card. */
+export type PaymentMethod = 'gpay' | 'phonepe' | 'upi' | 'card';
 
 export type Checkout = {
   provider: 'mock' | 'razorpay';

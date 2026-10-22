@@ -3,8 +3,10 @@ import { all, one, run, tx } from './db.js';
 import { APPROX_RADIUS_M, haversineKm, publicDistanceKm } from './geo.js';
 import { PHOTO_COLUMNS, photoView } from './images.js';
 import { refundProviderPayment } from './payment-provider.js';
+import { canReview, myReview, propertyReviews } from './reviews.js';
 import { activePassFor, activeUnlock, createPass, grantUnlock, toUnlock, unlockOptions } from './unlocks.js';
 import { HttpError, decryptJson, nowIso, todayIST } from './util.js';
+import { verificationChecks } from './verification.js';
 
 // Display order: Homes, Apartments, Villas, PG, Room Sharing ("house" is shown as Homes).
 export const CATEGORIES = ['house', 'apartments', 'villas', 'pg', 'room_sharing'];
@@ -90,7 +92,9 @@ export function toCard(property, { user, origin } = {}) {
     coverPhoto: cover?.card ?? null, // card-size version — much smaller download than the original
     cover,
     photoCount,
-    verified: property.verification === 'verified',
+    // "Verified" on the card = every check in the listing's Verified section: owner KYC, admin, document.
+    verified: Object.values(verificationChecks(property)).every(Boolean),
+    unlockFee: config.unlockFeePaise / 100, // shown on the card's "Unlock owner contact ₹29" button
     availableFrom: property.available_from,
     createdAt: property.created_at,
     isOwner: user?.id === property.owner_id,
@@ -112,26 +116,29 @@ export function toDetail(property, user) {
     amenities: JSON.parse(property.amenities),
     photos: all(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? ORDER BY position`, property.id).map(photoView),
     bookedPeriods: bookedPeriods(property.id),
-    unlockFee: config.unlockFeePaise / 100,
     unlock: null,
     unlockOptions: unlockOptions(user, property),
     owner: null,
     exactLocation: null,
+    checks: verificationChecks(property),
+    reviews: propertyReviews(property.id),
+    myReview: myReview(user, property.id),
+    canReview: canReview(user, property),
   };
   const unlock = user && activeUnlock(user.id, property.id);
   if (unlock) detail.unlock = toUnlock(unlock);
   if (card.unlocked) {
-    const owner = one('SELECT id, name, phone, whatsapp, available FROM users WHERE id = ?', property.owner_id);
-    detail.owner = {
-      id: owner.id,
-      name: owner.name,
-      phone: owner.phone,
-      whatsapp: owner.whatsapp || owner.phone,
-      available: Boolean(owner.available),
-    };
+    detail.owner = ownerContact(property.owner_id);
     detail.exactLocation = exactLocation(property);
   }
   return detail;
+}
+
+/** What a tenant sees after unlocking: the mobile and WhatsApp numbers the owner gave in KYC. */
+export function ownerContact(ownerId) {
+  const owner = one('SELECT id, name, phone, contact_phone, whatsapp, available FROM users WHERE id = ?', ownerId);
+  const phone = owner.contact_phone || owner.phone;
+  return { id: owner.id, name: owner.name, phone, whatsapp: owner.whatsapp || phone, available: Boolean(owner.available) };
 }
 
 export function getPropertyOr404(id) {

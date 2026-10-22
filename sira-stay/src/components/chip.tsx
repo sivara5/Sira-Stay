@@ -18,7 +18,7 @@ export function Chip({ label, selected, onPress, icon }: Props) {
       accessibilityState={{ selected }}
       onPress={onPress}
       style={[styles.chip, selected && styles.selected]}>
-      {icon && <Ionicons name={icon} size={15} color={selected ? colors.white : colors.textMuted} />}
+      {icon && <Ionicons name={icon} size={15} color={selected ? colors.onPrimary : colors.textMuted} />}
       <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
     </Pressable>
   );
@@ -34,9 +34,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.white,
+    backgroundColor: colors.card,
   },
   selected: { backgroundColor: colors.primary, borderColor: colors.primary },
   label: { fontSize: 14, color: colors.text, fontWeight: '500' },
-  labelSelected: { color: colors.white, fontWeight: '700' },
+  labelSelected: { color: colors.onPrimary, fontWeight: '700' },
 });

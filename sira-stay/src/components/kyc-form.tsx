@@ -24,14 +24,21 @@ const ID_FORMAT: Record<IdType, { pattern: RegExp; placeholder: string; numeric:
   driving_licence: { pattern: /^[A-Z0-9]{10,20}$/, placeholder: 'TN0120230001234', numeric: false },
 };
 
+const MOBILE = /^[6-9]\d{9}$/;
+const local = (phone: string | null | undefined) => phone?.replace(/^\+91/, '') ?? '';
+const digits = (v: string) => v.replace(/\D/g, '').slice(0, 10);
+
 /**
- * Owner ID verification (KYC): full name, ID type/number and ID photo → POST /auth/kyc.
+ * Owner ID verification (KYC): full name, mobile + WhatsApp numbers (shown to tenants who unlock
+ * the contact), ID type/number and ID photo → POST /auth/kyc.
  * Returns the fields plus `submit`/`loading` so each screen decides where the button goes.
  */
 export function useKycForm(onSubmitted: (me: Me) => void) {
   const { t, errorText } = useI18n();
   const { user } = useAuth();
   const [name, setName] = useState(user?.name ?? '');
+  const [mobile, setMobile] = useState(local(user?.contactPhone ?? user?.phone));
+  const [whatsapp, setWhatsapp] = useState(local(user?.whatsapp ?? user?.phone));
   const [idType, setIdType] = useState<IdType>('aadhaar');
   const [idNumber, setIdNumber] = useState('');
   const [photo, setPhoto] = useState<PickedImage | null>(null);
@@ -43,6 +50,8 @@ export function useKycForm(onSubmitted: (me: Me) => void) {
   async function submit() {
     const next: Record<string, string> = {};
     if (name.trim().length < 2) next.name = t('common.required');
+    if (!MOBILE.test(mobile)) next.contactPhone = mobile ? t('err.INVALID_PHONE') : t('common.required');
+    if (!MOBILE.test(whatsapp)) next.whatsapp = whatsapp ? t('err.INVALID_PHONE') : t('common.required');
     if (!ID_FORMAT[idType].pattern.test(cleanId)) next.idNumber = t('err.INVALID_ID_NUMBER');
     if (!photo) next.idPhoto = t('common.required');
     setErrors(next);
@@ -51,6 +60,8 @@ export function useKycForm(onSubmitted: (me: Me) => void) {
     setLoading(true);
     const form = new FormData();
     form.append('name', name.trim());
+    form.append('contactPhone', mobile);
+    form.append('whatsapp', whatsapp);
     form.append('idType', idType);
     form.append('idNumber', cleanId);
     form.append('idPhoto', filePart(photo.uri, imageName(photo, 'id'), imageMime(photo)));
@@ -66,6 +77,29 @@ export function useKycForm(onSubmitted: (me: Me) => void) {
   const fields = (
     <>
       <TextField label={t('onb.fullName')} value={name} onChangeText={setName} autoComplete="name" error={errors.name} />
+
+      <TextField
+        label={`${t('kyc.mobile')} *`}
+        prefix="+91"
+        value={mobile}
+        onChangeText={(v) => setMobile(digits(v))}
+        placeholder="98765 43210"
+        keyboardType="phone-pad"
+        autoComplete="tel"
+        maxLength={10}
+        error={errors.contactPhone}
+      />
+      <TextField
+        label={`${t('kyc.whatsapp')} *`}
+        prefix="+91"
+        value={whatsapp}
+        onChangeText={(v) => setWhatsapp(digits(v))}
+        placeholder="98765 43210"
+        keyboardType="phone-pad"
+        maxLength={10}
+        hint={t('kyc.contactHint')}
+        error={errors.whatsapp}
+      />
 
       <View style={styles.group}>
         <Text style={styles.label}>{t('onb.idType')}</Text>
@@ -140,7 +174,7 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   row: { flexDirection: 'row', gap: 10 },
   flex: { flex: 1 },
-  preview: { borderRadius: radius.md, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
+  preview: { borderRadius: radius.md, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
   previewImage: { width: '100%', height: 160 },
   previewBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 10, backgroundColor: colors.successSoft },
   previewText: { fontSize: 13, color: colors.success, fontWeight: '600' },

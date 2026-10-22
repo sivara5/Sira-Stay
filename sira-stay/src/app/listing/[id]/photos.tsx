@@ -114,7 +114,7 @@ export default function ManagePhotos() {
               <ProgressiveImage photo={p} style={[styles.thumb, busy === p.id && styles.thumbBusy]} />
               {i === 0 && (
                 <View style={styles.mainBadge}>
-                  <Ionicons name="star" size={10} color={colors.white} />
+                  <Ionicons name="star" size={10} color={colors.onPrimary} />
                   <Text style={styles.mainText}>{t('photos.main')}</Text>
                 </View>
               )}
@@ -122,7 +122,7 @@ export default function ManagePhotos() {
                 <Ionicons name="close" size={14} color={colors.white} />
               </Pressable>
               <View style={[styles.kind, p.kind === 'exterior' && styles.kindExterior]}>
-                <Text style={styles.kindText}>{t(`photo.${p.kind}`)}</Text>
+                <Text style={[styles.kindText, p.kind === 'exterior' && styles.kindTextExterior]}>{t(`photo.${p.kind}`)}</Text>
               </View>
             </Pressable>
           ))}
@@ -173,7 +173,7 @@ export default function ManagePhotos() {
                     onPress={() =>
                       setPending((list) => list.map((x, j) => (j === i ? { ...x, kind: x.kind === 'interior' ? 'exterior' : 'interior' } : x)))
                     }>
-                    <Text style={styles.kindText}>{t(`photo.${p.kind}`)}</Text>
+                    <Text style={[styles.kindText, p.kind === 'exterior' && styles.kindTextExterior]}>{t(`photo.${p.kind}`)}</Text>
                   </Pressable>
                 </View>
               ))}
@@ -213,11 +213,11 @@ const styles = StyleSheet.create({
   countRow: { gap: 6 },
   count: { fontSize: 16, fontWeight: '800', color: colors.danger },
   countOk: { color: colors.success },
-  progress: { height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: 'hidden' },
+  progress: { height: 6, borderRadius: 3, backgroundColor: colors.elevated, overflow: 'hidden' },
   progressFill: { height: 6, backgroundColor: colors.primary },
   row: { flexDirection: 'row', gap: 10 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  thumb: { width: '100%', height: '100%', borderRadius: radius.md, backgroundColor: colors.surface },
+  thumb: { width: '100%', height: '100%', borderRadius: radius.md, backgroundColor: colors.card },
   thumbBusy: { opacity: 0.4 },
   mainBadge: {
     position: 'absolute',
@@ -229,9 +229,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.primary,
   },
-  mainText: { color: colors.white, fontSize: 10, fontWeight: '800' },
+  mainText: { color: colors.onPrimary, fontSize: 10, fontWeight: '800' },
   remove: {
     position: 'absolute',
     top: 6,
@@ -243,8 +243,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  kind: { position: 'absolute', left: 6, bottom: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: colors.info },
+  kind: { position: 'absolute', left: 6, bottom: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: colors.overlay },
   kindExterior: { backgroundColor: colors.primary },
   kindText: { color: colors.white, fontSize: 11, fontWeight: '700' },
+  kindTextExterior: { color: colors.onPrimary },
   footer: { padding: 16, borderTopWidth: 1, borderTopColor: colors.border },
 });

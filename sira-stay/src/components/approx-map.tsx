@@ -1,6 +1,7 @@
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import MapView, { Circle, Marker } from 'react-native-maps';
 
+import { darkMapProps } from '@/constants/map-style';
 import { colors } from '@/constants/theme';
 import type { LatLng } from '@/lib/types';
 
@@ -20,6 +21,7 @@ export function ApproxMap({ approx, exact, title, description, interactive = fal
   const delta = exact ? 0.01 : 0.03;
   return (
     <MapView
+      {...darkMapProps}
       style={[styles.map, style]}
       initialRegion={{ latitude: center.lat, longitude: center.lng, latitudeDelta: delta, longitudeDelta: delta }}
       scrollEnabled={interactive}
@@ -43,7 +45,7 @@ export function AreaCircle({ approx }: { approx: LatLng & { radiusM: number } })
       radius={approx.radiusM}
       strokeColor={colors.primary}
       strokeWidth={2}
-      fillColor="rgba(14, 124, 102, 0.18)"
+      fillColor="rgba(212, 175, 55, 0.18)"
     />
   );
 }

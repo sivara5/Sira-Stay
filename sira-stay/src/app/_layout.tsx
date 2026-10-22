@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider, type Theme } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -6,6 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NetworkBanner } from '@/components/network-banner';
+import { PaymentMethodProvider } from '@/components/payment-method-sheet';
 import { PaymentRecovery } from '@/components/payment-recovery';
 import { colors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/lib/auth';
@@ -14,13 +15,30 @@ import { useNetwork } from '@/lib/network';
 
 SplashScreen.preventAutoHideAsync();
 
+const navigationTheme: Theme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: colors.primary,
+    background: colors.background,
+    card: colors.background,
+    text: colors.text,
+    border: colors.border,
+    notification: colors.danger,
+  },
+};
+
 export default function RootLayout() {
   return (
-    <I18nProvider>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
-    </I18nProvider>
+    <ThemeProvider value={navigationTheme}>
+      <I18nProvider>
+        <AuthProvider>
+          <PaymentMethodProvider>
+            <RootNavigator />
+          </PaymentMethodProvider>
+        </AuthProvider>
+      </I18nProvider>
+    </ThemeProvider>
   );
 }
 
@@ -39,12 +57,13 @@ function RootNavigator() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style={online ? 'dark' : 'light'} />
+      <StatusBar style="light" />
       <NetworkBanner topInset={insets.top} />
       {/* While offline the banner covers the status bar, so screens below must not add it again. */}
       <SafeAreaInsetsContext.Provider value={online ? insets : { ...insets, top: 0 }}>
         <Stack
           screenOptions={{
+            headerStyle: { backgroundColor: colors.background },
             headerTintColor: colors.text,
             headerTitleStyle: { fontWeight: '700' },
             headerShadowVisible: false,
