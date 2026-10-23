@@ -1,10 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { DetailRow as Row } from '@/components/detail-row';
 import { Banner, ErrorView, Loading } from '@/components/feedback';
+import { KeyboardAwareScrollView } from '@/components/keyboard-aware-scroll-view';
 import { SavedNote } from '@/components/network-banner';
 import { ProgressiveImage } from '@/components/progressive-image';
 import { ReviewCard } from '@/components/review-card';
@@ -43,7 +44,7 @@ export default function BookingDetails() {
   }
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.primary} />}>
       <SavedNote savedAt={savedAt} />
@@ -116,7 +117,7 @@ export default function BookingDetails() {
           onPress={() => router.push(`/property/${b.property.id}`)}
         />
       </View>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

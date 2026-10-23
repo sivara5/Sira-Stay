@@ -9,7 +9,6 @@ import {
   FlatList,
   Linking,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -21,6 +20,7 @@ import { ApproxMap } from '@/components/approx-map';
 import { Button } from '@/components/button';
 import { categoryIcon } from '@/components/category-tabs';
 import { Banner, ErrorView } from '@/components/feedback';
+import { KeyboardAwareScrollView } from '@/components/keyboard-aware-scroll-view';
 import { SavedNote } from '@/components/network-banner';
 import { useStartPayment } from '@/components/payment-method-sheet';
 import { ProgressiveImage } from '@/components/progressive-image';
@@ -129,7 +129,7 @@ export default function PropertyScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <KeyboardAwareScrollView contentContainerStyle={styles.scroll}>
         <View>
           <PhotoCarousel photos={photos} />
           {!p.isOwner && (
@@ -422,7 +422,7 @@ export default function PropertyScreen() {
             ))}
           </View>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {showBookingBar && (
         <View style={styles.bottomBar}>
