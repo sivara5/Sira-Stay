@@ -1,5 +1,5 @@
 import { one, run, tx } from './db.js';
-import { approximate } from './geo.js';
+import { APPROX_RADIUS_M, fuzzLocation } from './geo.js';
 import { encryptJson, newId, nowIso } from './util.js';
 
 const photo = (id) => `https://images.unsplash.com/photo-${id}?w=1200&q=70&auto=format&fit=crop`;
@@ -156,17 +156,18 @@ export function seedDemoData() {
     }
     LISTINGS.forEach((l, index) => {
       const id = newId();
-      const approx = approximate(l.lat, l.lng, id);
+      const approx = fuzzLocation(l.lat, l.lng);
       // Stagger creation times so "Newest" sorting looks natural.
       const createdAt = new Date(Date.now() - index * 3_600_000).toISOString();
       run(
         `INSERT INTO properties (id, owner_id, category, title, description, rent, deposit, booking_amount, furnishing, amenities,
-           district, area, landmark, location_enc, approx_lat, approx_lng, doc_type, verification, is_demo, created_at,
-           admin_verified_at, admin_verified_by, doc_checked_at, doc_checked_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'property_tax', 'verified', 1, ?, ?, 'demo', ?, 'demo')`,
+           district, area, landmark, location_enc, approx_lat, approx_lng, approx_radius_m, doc_type, verification, is_demo,
+           created_at, admin_verified_at, admin_verified_by, doc_checked_at, doc_checked_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'property_tax', 'verified', 1, ?, ?, 'demo', ?, 'demo')`,
         id, OWNERS[l.owner].id, l.category, l.title, l.description, l.rent, l.deposit, l.booking, l.furnishing,
         JSON.stringify(l.amenities), l.district, l.area, l.landmark,
-        encryptJson({ address: l.address, lat: l.lat, lng: l.lng }), approx.lat, approx.lng, createdAt, createdAt, createdAt,
+        encryptJson({ address: l.address, lat: l.lat, lng: l.lng }), approx.lat, approx.lng, APPROX_RADIUS_M,
+        createdAt, createdAt, createdAt,
       );
       l.photos.forEach(([kind, photoId], position) =>
         run('INSERT INTO photos (id, property_id, url, kind, position) VALUES (?, ?, ?, ?, ?)', newId(), id, photo(photoId), kind, position),

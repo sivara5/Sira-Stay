@@ -1,22 +1,23 @@
-import { hmacBytes } from './util.js';
+import crypto from 'node:crypto';
 
-/** Radius of the "general area" circle shown publicly. Always contains the real location. */
-export const APPROX_RADIUS_M = 800;
+/** Radius of the public "general area" circle. The house is always inside it. */
+export const APPROX_RADIUS_M = 400;
 
 const round = (n, places) => Math.round(n * 10 ** places) / 10 ** places;
+const random = () => crypto.randomInt(0, 2 ** 48 - 1) / 2 ** 48;
 
 /**
- * Deterministic 250–600 m offset seeded by the property id, so repeated requests can't be
- * averaged to recover the real point. Rounding adds at most ~80 m, keeping the true
- * location inside APPROX_RADIUS_M.
+ * Random public point within APPROX_RADIUS_M of the house. Picked once when the listing is created and
+ * stored, so repeated requests can't be averaged. Uniform over the disc (√ on the distance), so from the
+ * public circle the house is equally likely to be anywhere inside it. Rounding moves it at most ~0.8 m,
+ * covered by the 1 m margin.
  */
-export function approximate(lat, lng, seed) {
-  const h = hmacBytes(`approx:${seed}`);
-  const angle = (h.readUInt32BE(0) / 0xffffffff) * 2 * Math.PI;
-  const distance = 250 + (h.readUInt32BE(4) / 0xffffffff) * 350;
+export function fuzzLocation(lat, lng) {
+  const angle = random() * 2 * Math.PI;
+  const distance = (APPROX_RADIUS_M - 1) * Math.sqrt(random());
   const dLat = (distance * Math.cos(angle)) / 111320;
   const dLng = (distance * Math.sin(angle)) / (111320 * Math.cos((lat * Math.PI) / 180));
-  return { lat: round(lat + dLat, 3), lng: round(lng + dLng, 3) };
+  return { lat: round(lat + dLat, 5), lng: round(lng + dLng, 5) };
 }
 
 export function haversineKm(a, b) {
@@ -28,7 +29,7 @@ export function haversineKm(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-/** Coarse public distance (0.5 km steps, minimum 0.5) so distance can't be used to triangulate. */
+/** Coarse public distance (0.5 km steps, minimum 0.5). Always measured to the fuzzed point, never the house. */
 export const publicDistanceKm = (km) => Math.max(0.5, Math.round(km * 2) / 2);
 
 /** Rough bounding box for India — rejects an unset (0,0) or obviously wrong pin. */

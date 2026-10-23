@@ -1,12 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AreaCircle } from '@/components/approx-map';
+import { AreaCircle, AreaTag } from '@/components/approx-map';
 import { CategoryTabs } from '@/components/category-tabs';
 import { Chip } from '@/components/chip';
 import { Banner, EmptyState, ErrorView } from '@/components/feedback';
@@ -17,6 +17,7 @@ import { darkMapProps } from '@/constants/map-style';
 import { TAMIL_NADU_REGION, colors, radius } from '@/constants/theme';
 import { rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
+import { clusterTags, regionForCluster, type MapRegion } from '@/lib/map-clusters';
 import type { Category, PropertyCard as Card } from '@/lib/types';
 import { useQuery } from '@/lib/use-query';
 
@@ -155,7 +156,10 @@ export default function Explore() {
   );
 }
 
-/** Approximate-area circles only — exact locations are never sent to the app before unlock. */
+/**
+ * Area circles and price tags drawn from each listing's fuzzed point — exact locations are never sent to
+ * the app before unlock. Tags that would overlap are grouped into a count bubble; tapping it zooms in.
+ */
 function ResultsMap({ properties, origin }: { properties: Card[]; origin: { lat: number; lng: number } | null }) {
   const { t } = useI18n();
   const region = useMemo(() => {
@@ -176,32 +180,50 @@ function ResultsMap({ properties, origin }: { properties: Card[]; origin: { lat:
     mapRef.current?.animateToRegion(region, 300);
   }, [region]);
 
+  // Tags are grouped for what the map shows right now: its region and its size on screen.
+  const [shown, setShown] = useState<MapRegion>(region);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const clusters = useMemo(() => clusterTags(properties, shown, size), [properties, shown, size]);
+
   return (
-    <View style={styles.mapWrap}>
+    <View style={styles.mapWrap} onLayout={(e) => setSize({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}>
       <MapView
         {...darkMapProps}
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         initialRegion={region}
+        onRegionChangeComplete={setShown}
         showsUserLocation={Boolean(origin)}
         toolbarEnabled={false}>
         {properties.map((p) => (
-          <Fragment key={p.id}>
-            <AreaCircle approx={p.approxLocation} />
-            <Marker
-              coordinate={{ latitude: p.approxLocation.lat, longitude: p.approxLocation.lng }}
-              onPress={() => router.push(`/property/${p.id}`)}
-              tracksViewChanges={false}>
+          <AreaCircle key={p.id} approx={p.approxLocation} />
+        ))}
+        {clusters.map((c) => {
+          const [p] = c.items;
+          return c.items.length === 1 ? (
+            <AreaTag key={c.key} approx={p.approxLocation} onPress={() => router.push(`/property/${p.id}`)}>
               <View style={[styles.pricePin, p.status === 'BOOKED' && styles.pricePinBooked]}>
                 <Text style={styles.pricePinText}>{rupees(p.rent)}</Text>
               </View>
+            </AreaTag>
+          ) : (
+            <Marker
+              key={c.key}
+              coordinate={{ latitude: c.center.lat, longitude: c.center.lng }}
+              anchor={{ x: 0.5, y: 0.5 }}
+              onPress={() => mapRef.current?.animateToRegion(regionForCluster(c, shown), 350)}
+              tracksViewChanges={false}
+              accessibilityLabel={t('explore.cluster', { n: c.items.length })}>
+              <View style={styles.cluster}>
+                <Text style={styles.clusterText}>{c.items.length}</Text>
+              </View>
             </Marker>
-          </Fragment>
-        ))}
+          );
+        })}
       </MapView>
       <View style={styles.mapNote}>
         <Banner tone="info" icon="shield-checkmark-outline">
-          {t('explore.mapNote')}
+          {t('explore.mapNote', { m: properties[0]?.approxLocation.radiusM ?? 400 })}
         </Banner>
       </View>
     </View>
@@ -252,4 +274,16 @@ const styles = StyleSheet.create({
   },
   pricePinBooked: { backgroundColor: colors.warningSoft, borderColor: colors.warning },
   pricePinText: { fontWeight: '800', fontSize: 13, color: colors.primary },
+  cluster: {
+    minWidth: 38,
+    height: 38,
+    paddingHorizontal: 8,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderWidth: 2,
+    borderColor: colors.card,
+  },
+  clusterText: { fontWeight: '900', fontSize: 14, color: colors.onPrimary },
 });

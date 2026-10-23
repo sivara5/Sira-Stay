@@ -15,11 +15,28 @@ function addMonths(iso, months) {
 
 // ---------------------------------------------------------------- unlocks
 
-/** The user's current unlock for a property: not reported and less than 6 months old. */
+/** SQL condition: payment row `p` went through and its money hasn't been (or isn't being) refunded. */
+export const PAID = (p) => `${p}.status = 'paid' AND COALESCE(${p}.refund_status, '') NOT IN ('processing', 'refunded')`;
+
+/**
+ * The user's current unlock for a property: not reported, less than 6 months old, and backed by a
+ * successful payment — the ₹29 unlock for this listing, or the District Pass the credit came from.
+ * Free credits are only ever given instead of refunding a paid unlock, so they count as paid.
+ */
 export const activeUnlock = (userId, propertyId) =>
   one(
-    `SELECT * FROM unlocks WHERE user_id = ? AND property_id = ? AND status = 'active' AND expires_at > ?
-      ORDER BY unlocked_at DESC LIMIT 1`,
+    `SELECT u.* FROM unlocks u
+       LEFT JOIN payments pay ON pay.id = u.payment_id AND pay.user_id = u.user_id AND pay.property_id = u.property_id
+       LEFT JOIN district_passes dp ON dp.id = u.pass_id
+       LEFT JOIN payments pass_pay ON pass_pay.id = dp.payment_id
+      WHERE u.user_id = ? AND u.property_id = ? AND u.status = 'active' AND u.expires_at > ?
+        AND CASE u.method
+              WHEN 'payment' THEN ${PAID('pay')}
+              WHEN 'pass' THEN ${PAID('pass_pay')}
+              WHEN 'credit' THEN 1
+              ELSE 0
+            END
+      ORDER BY u.unlocked_at DESC LIMIT 1`,
     userId,
     propertyId,
     nowIso(),

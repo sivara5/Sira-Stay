@@ -1,4 +1,5 @@
 import { all, one, run } from './db.js';
+import { assertNoLocationLeaks } from './public-text.js';
 import { HttpError, newId, nowIso } from './util.js';
 
 /**
@@ -48,6 +49,7 @@ export function parseReview(body) {
     throw new HttpError(400, 'VALIDATION', 'Choose a rating from 1 to 5 stars.', { field: 'rating' });
   }
   const comment = typeof body?.comment === 'string' ? body.comment.trim().slice(0, 500) || null : null;
+  assertNoLocationLeaks({ comment }); // reviews are public, before anyone has unlocked
   return { rating, comment };
 }
 

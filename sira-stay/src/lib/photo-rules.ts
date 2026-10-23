@@ -5,8 +5,6 @@ export const MAX_PHOTOS = 20;
 /** Photos smaller than this on their longest side are rejected as unclear. */
 export const MIN_PHOTO_PX = 800;
 
-export type PhotoKind = 'interior' | 'exterior';
-
 /** Identifies the same picked image across picks (gallery asset id, or size + dimensions). */
 export const photoKey = (p: PickedImage) => p.assetId || `${p.fileSize ?? 0}:${p.width}x${p.height}`;
 

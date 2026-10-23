@@ -17,6 +17,21 @@ const LARGE_WIDTH = 1440;
 const localPath = (url) => (url.startsWith('/uploads/') ? path.join(config.uploadDir, url.slice('/uploads/'.length)) : null);
 const toUrl = (file) => `/uploads/${path.relative(config.uploadDir, file).split(path.sep).join('/')}`;
 
+/**
+ * Re-encodes an uploaded photo in place without EXIF/XMP metadata — phone photos can carry the GPS
+ * position of the house. Returns false when the image can't be decoded (e.g. HEIC), so it's never published unchecked.
+ */
+export async function stripPhotoMetadata(file) {
+  try {
+    const image = sharp(file, { failOn: 'error' }).rotate(); // bakes in the EXIF orientation before it's dropped
+    if ((await image.metadata()).format === 'jpeg') image.jpeg({ quality: 90, mozjpeg: true });
+    await fs.promises.writeFile(file, await image.toBuffer()); // sharp writes no metadata unless asked to
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Card (~720px) and gallery (~1440px) JPEGs plus a thumbhash preview for an uploaded photo. */
 async function makeVariants(url) {
   const file = localPath(url);

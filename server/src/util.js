@@ -18,7 +18,6 @@ export const newId = () => crypto.randomUUID();
 export const newToken = () => crypto.randomBytes(32).toString('base64url');
 export const sha256 = (data) => crypto.createHash('sha256').update(data).digest('hex');
 export const hmac = (value) => crypto.createHmac('sha256', macKey).update(value).digest('hex');
-export const hmacBytes = (value) => crypto.createHmac('sha256', macKey).update(value).digest();
 
 export function safeEqual(a, b) {
   const x = Buffer.from(String(a));

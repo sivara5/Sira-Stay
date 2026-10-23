@@ -13,6 +13,7 @@ import { categoryIcon } from '@/components/category-tabs';
 import { Chip } from '@/components/chip';
 import { DateField } from '@/components/date-field';
 import { Banner } from '@/components/feedback';
+import { LeakBanner, useLeakText } from '@/components/leak-warning';
 import { TextField } from '@/components/text-field';
 import { darkMapProps } from '@/constants/map-style';
 import { TAMIL_NADU_REGION, colors, radius } from '@/constants/theme';
@@ -20,21 +21,27 @@ import { ApiError, api, filePart } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { todayString, fromDateString } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import { MAX_PHOTOS, MIN_PHOTOS, filterPicked, photoKey, type PhotoKind } from '@/lib/photo-rules';
-import { choosePhotos, imageMime, imageName, takePhoto, type PickedImage } from '@/lib/pick-image';
+import { MAX_PHOTOS, MIN_PHOTOS, filterPicked, photoKey } from '@/lib/photo-rules';
+import { choosePhotos, takePhoto, type PickedImage } from '@/lib/pick-image';
 import type { StringKey } from '@/lib/strings';
 import { AMENITIES, CATEGORIES, type Amenity, type Category, type Furnishing, type PropertyDetail } from '@/lib/types';
+import { PhotoPrepError, prepareUploadPhotos } from '@/lib/upload-photos';
 
 const FURNISHING: Furnishing[] = ['unfurnished', 'semi_furnished', 'furnished'];
 const DOC_TYPES = ['property_tax', 'eb_bill', 'sale_deed', 'rental_agreement', 'other'] as const;
 const STEPS: StringKey[] = ['new.stepDetails', 'new.stepLocation', 'new.stepPhotos', 'new.stepDocs'];
 
-type Photo = PickedImage & { kind: PhotoKind };
 type Errors = Partial<Record<string, string>>;
+
+/** Fields every tenant sees, by wizard step: they must not give the house away before unlock. */
+const PUBLIC_FIELDS: Partial<Record<number, ('title' | 'description' | 'district' | 'area' | 'landmark')[]>> = {
+  0: ['title', 'description'],
+  1: ['district', 'area', 'landmark'],
+};
 
 /** Which wizard step a server-side validation error belongs to. */
 const FIELD_STEP: Record<string, number> = {
-  category: 0, title: 0, rent: 0, deposit: 0, bookingAmount: 0,
+  category: 0, title: 0, description: 0, rent: 0, deposit: 0, bookingAmount: 0,
   address: 1, district: 1, area: 1, landmark: 1, location: 1,
   photos: 2,
   document: 3,
@@ -56,10 +63,11 @@ export default function NewListing() {
   const [availableFrom, setAvailableFrom] = useState<string | null>(null);
   const [pin, setPin] = useState<LatLng | null>(null);
   const [locating, setLocating] = useState(false);
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [photos, setPhotos] = useState<PickedImage[]>([]);
   const [skipped, setSkipped] = useState<{ duplicates: number; lowRes: number }>({ duplicates: 0, lowRes: 0 });
   const [docType, setDocType] = useState<(typeof DOC_TYPES)[number]>('property_tax');
   const [document, setDocument] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
+  const leakText = useLeakText();
 
   const set = (key: keyof typeof form) => (value: string) => {
     setForm((f) => ({ ...f, [key]: key === 'rent' || key === 'deposit' || key === 'bookingAmount' ? value.replace(/\D/g, '') : value }));
@@ -79,13 +87,16 @@ export default function NewListing() {
       });
       if (!pin) e.location = t('new.pinRequired');
     }
-    if (s === 2) {
-      if (photos.length < MIN_PHOTOS) e.photos = t('new.needMin');
-      else if (!photos.some((p) => p.kind === 'interior') || !photos.some((p) => p.kind === 'exterior')) e.photos = t('new.needMix');
-    }
+    if (s === 2 && photos.length < MIN_PHOTOS) e.photos = t('new.needMin');
     if (s === 3 && !document) e.document = t('new.docRequired');
+    PUBLIC_FIELDS[s]?.forEach((k) => {
+      const leak = leakText(form[k]);
+      if (leak) e[k] = leak;
+    });
     return e;
   }
+
+  const stepHasLeak = Boolean(PUBLIC_FIELDS[step]?.some((k) => leakText(form[k])));
 
   function next() {
     const e = validate(step);
@@ -120,10 +131,8 @@ export default function NewListing() {
 
   function addPhotos(picked: PickedImage[]) {
     const { accepted, duplicates, lowRes } = filterPicked(picked, new Set(photos.map(photoKey)), MAX_PHOTOS - photos.length);
-    // First photo defaults to exterior; the owner can switch any label.
-    const labelled: Photo[] = accepted.map((img, i) => ({ ...img, kind: photos.length + i === 0 ? 'exterior' : 'interior' }));
     setSkipped({ duplicates, lowRes });
-    setPhotos((list) => [...list, ...labelled]);
+    setPhotos((list) => [...list, ...accepted]);
     setErrors((e) => ({ ...e, photos: undefined }));
   }
 
@@ -136,9 +145,28 @@ export default function NewListing() {
   }
 
   async function publish() {
-    const e = validate(3);
-    setErrors(e);
-    if (Object.keys(e).length || !pin || !document) return;
+    // Re-check every step: nothing is saved while a public field still gives the house away.
+    for (const s of STEPS.keys()) {
+      const e = validate(s);
+      if (Object.keys(e).length) {
+        setErrors(e);
+        setStep(s);
+        return;
+      }
+    }
+    setErrors({});
+    if (!pin || !document) return;
+
+    setSubmitting(true);
+    let files;
+    try {
+      files = await prepareUploadPhotos(photos);
+    } catch (err) {
+      setSubmitting(false);
+      setErrors({ photos: t('new.photoPrepFailed', { n: err instanceof PhotoPrepError ? err.index + 1 : 1 }) });
+      setStep(FIELD_STEP.photos);
+      return;
+    }
 
     const body = new FormData();
     const fields: Record<string, string> = {
@@ -149,15 +177,13 @@ export default function NewListing() {
       amenities: JSON.stringify(amenities),
       lat: String(pin.latitude),
       lng: String(pin.longitude),
-      photoKinds: JSON.stringify(photos.map((p) => p.kind)),
       docType,
     };
     if (availableFrom) fields.availableFrom = availableFrom;
     Object.entries(fields).forEach(([k, v]) => body.append(k, v));
-    photos.forEach((p, i) => body.append('photos', filePart(p.uri, imageName(p, `photo-${i + 1}`), imageMime(p))));
+    files.forEach((f) => body.append('photos', filePart(f.uri, f.name, f.type)));
     body.append('document', filePart(document.uri, document.name, document.mimeType ?? 'application/octet-stream'));
 
-    setSubmitting(true);
     try {
       const { property } = await api<{ property: PropertyDetail }>('/properties', { form: body });
       Alert.alert(t('new.published'));
@@ -202,7 +228,15 @@ export default function NewListing() {
                   ))}
                 </View>
               </Group>
-              <TextField label={t('new.titleLabel')} placeholder={t('new.titlePlaceholder')} value={form.title} onChangeText={set('title')} maxLength={80} error={errors.title} />
+              {stepHasLeak && <LeakBanner>{t('leak.body')}</LeakBanner>}
+              <TextField
+                label={t('new.titleLabel')}
+                placeholder={t('new.titlePlaceholder')}
+                value={form.title}
+                onChangeText={set('title')}
+                maxLength={80}
+                error={errors.title ?? leakText(form.title)}
+              />
               <TextField
                 label={t('new.description')}
                 placeholder={t('new.descriptionPlaceholder')}
@@ -210,6 +244,7 @@ export default function NewListing() {
                 onChangeText={set('description')}
                 multiline
                 maxLength={2000}
+                error={errors.description ?? leakText(form.description)}
               />
               <View style={styles.row}>
                 <View style={styles.flex}>
@@ -258,10 +293,29 @@ export default function NewListing() {
 
           {step === 1 && (
             <>
+              {stepHasLeak && <LeakBanner>{t('leak.body')}</LeakBanner>}
               <TextField label={`${t('new.address')} *`} placeholder={t('new.addressPlaceholder')} value={form.address} onChangeText={set('address')} error={errors.address} />
-              <TextField label={`${t('new.district')} *`} placeholder="Chennai" value={form.district} onChangeText={set('district')} error={errors.district} />
-              <TextField label={`${t('new.area')} *`} placeholder="Anna Nagar" value={form.area} onChangeText={set('area')} error={errors.area} />
-              <TextField label={`${t('new.landmark')} *`} placeholder="Tower Park" value={form.landmark} onChangeText={set('landmark')} error={errors.landmark} />
+              <TextField
+                label={`${t('new.district')} *`}
+                placeholder="Chennai"
+                value={form.district}
+                onChangeText={set('district')}
+                error={errors.district ?? leakText(form.district)}
+              />
+              <TextField
+                label={`${t('new.area')} *`}
+                placeholder="Anna Nagar"
+                value={form.area}
+                onChangeText={set('area')}
+                error={errors.area ?? leakText(form.area)}
+              />
+              <TextField
+                label={`${t('new.landmark')} *`}
+                placeholder="Tower Park"
+                value={form.landmark}
+                onChangeText={set('landmark')}
+                error={errors.landmark ?? leakText(form.landmark)}
+              />
 
               <Group label={`${t('new.pinTitle')} *`}>
                 <Text style={styles.hint}>{t('new.pinHint')}</Text>
@@ -290,6 +344,9 @@ export default function NewListing() {
 
           {step === 2 && (
             <>
+              <Banner tone="warning" title={t('new.indoorOnly')} icon="eye-off-outline">
+                {t('new.indoorOnlyBody')}
+              </Banner>
               <Banner tone="info" title={t('new.photoRules')} icon="images-outline">
                 {t('new.photoRulesBody')}
               </Banner>
@@ -325,7 +382,6 @@ export default function NewListing() {
               {photos.length >= MAX_PHOTOS && <Text style={styles.hint}>{t('new.maxReached')}</Text>}
               {skipped.duplicates > 0 && <Banner tone="warning">{t('new.duplicateSkipped', { n: skipped.duplicates })}</Banner>}
               {skipped.lowRes > 0 && <Banner tone="warning">{t('new.lowResSkipped', { n: skipped.lowRes })}</Banner>}
-              {photos.length > 0 && <Text style={styles.hint}>{t('new.tagHint')}</Text>}
               <View style={styles.grid}>
                 {photos.map((p, i) => (
                   <View key={photoKey(p)} style={{ width: thumb, height: thumb }}>
@@ -336,13 +392,6 @@ export default function NewListing() {
                       onPress={() => setPhotos((list) => list.filter((_, j) => j !== i))}
                       accessibilityLabel="Remove photo">
                       <Ionicons name="close" size={14} color={colors.white} />
-                    </Pressable>
-                    <Pressable
-                      style={[styles.kind, p.kind === 'exterior' && styles.kindExterior]}
-                      onPress={() =>
-                        setPhotos((list) => list.map((x, j) => (j === i ? { ...x, kind: x.kind === 'interior' ? 'exterior' : 'interior' } : x)))
-                      }>
-                      <Text style={[styles.kindText, p.kind === 'exterior' && styles.kindTextExterior]}>{t(`photo.${p.kind}`)}</Text>
                     </Pressable>
                   </View>
                 ))}
@@ -398,7 +447,6 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
@@ -437,18 +485,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  kind: {
-    position: 'absolute',
-    left: 6,
-    bottom: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-    backgroundColor: colors.overlay,
-  },
-  kindExterior: { backgroundColor: colors.primary },
-  kindText: { color: colors.white, fontSize: 11, fontWeight: '700' },
-  kindTextExterior: { color: colors.onPrimary },
   docPicker: {
     flexDirection: 'row',
     alignItems: 'center',

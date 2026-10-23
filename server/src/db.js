@@ -2,6 +2,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { config } from './config.js';
+import { APPROX_RADIUS_M, fuzzLocation } from './geo.js';
+import { decryptJson } from './util.js';
 
 export const db = new DatabaseSync(path.join(config.dataDir, 'sira.db'));
 
@@ -64,8 +66,9 @@ CREATE TABLE IF NOT EXISTS properties (
   area TEXT NOT NULL,
   landmark TEXT NOT NULL,
   location_enc TEXT NOT NULL,                   -- encrypted {address, lat, lng}; never sent publicly
-  approx_lat REAL NOT NULL,                     -- offset point for public maps
+  approx_lat REAL NOT NULL,                     -- random point within approx_radius_m of the house, for public maps
   approx_lng REAL NOT NULL,
+  approx_radius_m INTEGER NOT NULL DEFAULT 400, -- radius of the public circle around the fuzzed point
   doc_type TEXT,
   doc_file TEXT,
   verification TEXT NOT NULL DEFAULT 'pending', -- pending | verified
@@ -345,6 +348,22 @@ if (db.prepare("SELECT \"notnull\" AS required FROM pragma_table_info('reviews')
       DROP TABLE reviews_legacy;
     `),
   );
+}
+
+// Migration: the public area circle is now 400 m (was 800 m) with the fuzzed point random inside it.
+// Old offsets reached ~680 m, outside a 400 m circle, so every listing gets a new fuzzed point.
+// Runs once: the new column is the marker, added in the same transaction as the new points, so a crash
+// midway rolls both back and the next start retries (test/fuzz-migration.test.js).
+if (!hasColumn('properties', 'approx_radius_m')) {
+  migrate(() => {
+    db.exec(`ALTER TABLE properties ADD COLUMN approx_radius_m INTEGER NOT NULL DEFAULT ${APPROX_RADIUS_M}`);
+    const update = db.prepare('UPDATE properties SET approx_lat = ?, approx_lng = ? WHERE id = ?');
+    for (const p of db.prepare('SELECT id, location_enc FROM properties').all()) {
+      const { lat, lng } = decryptJson(p.location_enc);
+      const approx = fuzzLocation(lat, lng);
+      update.run(approx.lat, approx.lng, p.id);
+    }
+  });
 }
 
 db.exec(`

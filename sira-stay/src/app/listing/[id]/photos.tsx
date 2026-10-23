@@ -11,12 +11,12 @@ import { ProgressiveImage } from '@/components/progressive-image';
 import { colors, radius } from '@/constants/theme';
 import { api, filePart } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
-import { MAX_PHOTOS, MIN_PHOTOS, filterPicked, photoKey, type PhotoKind } from '@/lib/photo-rules';
-import { choosePhotos, imageMime, imageName, takePhoto, type PickedImage } from '@/lib/pick-image';
+import { MAX_PHOTOS, MIN_PHOTOS, filterPicked, photoKey } from '@/lib/photo-rules';
+import { choosePhotos, takePhoto, type PickedImage } from '@/lib/pick-image';
 import type { PropertyDetail } from '@/lib/types';
+import { PhotoPrepError, prepareUploadPhotos } from '@/lib/upload-photos';
 import { useQuery } from '@/lib/use-query';
 
-type Pending = PickedImage & { kind: PhotoKind };
 type Notice = { tone: 'success' | 'warning' | 'danger'; text: string };
 
 /** Owner adds (up to 20 total) or removes photos of one listing, and picks the main photo. */
@@ -25,7 +25,7 @@ export default function ManagePhotos() {
   const { t, errorText } = useI18n();
   const { width } = useWindowDimensions();
   const { data, error, loading, reload, setData } = useQuery<{ property: PropertyDetail }>(`/properties/${id}`);
-  const [pending, setPending] = useState<Pending[]>([]);
+  const [pending, setPending] = useState<PickedImage[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
 
@@ -49,7 +49,8 @@ export default function ManagePhotos() {
       if (success) setNotices([{ tone: 'success', text: success }]);
       return true;
     } catch (err) {
-      setNotices([{ tone: 'danger', text: errorText(err) }]);
+      const text = err instanceof PhotoPrepError ? t('new.photoPrepFailed', { n: err.index + 1 }) : errorText(err);
+      setNotices([{ tone: 'danger', text }]);
       return false;
     } finally {
       setBusy(null);
@@ -62,14 +63,20 @@ export default function ManagePhotos() {
     if (duplicates) next.push({ tone: 'warning', text: t('new.duplicateSkipped', { n: duplicates }) });
     if (lowRes) next.push({ tone: 'warning', text: t('new.lowResSkipped', { n: lowRes }) });
     setNotices(next);
-    setPending((list) => [...list, ...accepted.map((img) => ({ ...img, kind: 'interior' as const }))]);
+    setPending((list) => [...list, ...accepted]);
   }
 
   async function upload() {
-    const form = new FormData();
-    pending.forEach((p, i) => form.append('photos', filePart(p.uri, imageName(p, `photo-${i + 1}`), imageMime(p))));
-    form.append('photoKinds', JSON.stringify(pending.map((p) => p.kind)));
-    const ok = await run('upload', () => api(`/properties/${property.id}/photos`, { form }), t('photos.uploaded'));
+    const ok = await run(
+      'upload',
+      async () => {
+        const form = new FormData();
+        const files = await prepareUploadPhotos(pending); // JPEG, no GPS/EXIF (HEIC included)
+        files.forEach((f) => form.append('photos', filePart(f.uri, f.name, f.type)));
+        return api<{ photos: PropertyDetail['photos'] }>(`/properties/${property.id}/photos`, { form });
+      },
+      t('photos.uploaded'),
+    );
     if (ok) setPending([]);
   }
 
@@ -90,6 +97,9 @@ export default function ManagePhotos() {
         <Text style={styles.title} numberOfLines={2}>
           {property.title}
         </Text>
+        <Banner tone="warning" title={t('new.indoorOnly')} icon="eye-off-outline">
+          {t('new.indoorOnlyBody')}
+        </Banner>
         <Banner tone="info" title={t('new.photoRules')} icon="images-outline">
           {t('new.photoRulesBody')}
         </Banner>
@@ -103,6 +113,7 @@ export default function ManagePhotos() {
 
         <Text style={styles.sectionTitle}>{t('photos.current')}</Text>
         <Text style={styles.hint}>{t('photos.mainHint')}</Text>
+        {photos.some((p) => p.kind === 'exterior') && <Text style={styles.hint}>{t('photos.exteriorHidden')}</Text>}
         <View style={styles.grid}>
           {photos.map((p, i) => (
             <Pressable
@@ -122,6 +133,8 @@ export default function ManagePhotos() {
                 <Ionicons name="close" size={14} color={colors.white} />
               </Pressable>
               <View style={[styles.kind, p.kind === 'exterior' && styles.kindExterior]}>
+                {/* Exterior photos are hidden from tenants until they unlock. */}
+                {p.kind === 'exterior' && <Ionicons name="lock-closed" size={10} color={colors.onPrimary} />}
                 <Text style={[styles.kindText, p.kind === 'exterior' && styles.kindTextExterior]}>{t(`photo.${p.kind}`)}</Text>
               </View>
             </Pressable>
@@ -156,7 +169,6 @@ export default function ManagePhotos() {
         {pending.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>{t('photos.toUpload')}</Text>
-            <Text style={styles.hint}>{t('new.tagHint')}</Text>
             <View style={styles.grid}>
               {pending.map((p, i) => (
                 <View key={photoKey(p)} style={{ width: thumb, height: thumb }}>
@@ -167,13 +179,6 @@ export default function ManagePhotos() {
                     onPress={() => setPending((list) => list.filter((_, j) => j !== i))}
                     accessibilityLabel={t('photos.remove')}>
                     <Ionicons name="close" size={14} color={colors.white} />
-                  </Pressable>
-                  <Pressable
-                    style={[styles.kind, p.kind === 'exterior' && styles.kindExterior]}
-                    onPress={() =>
-                      setPending((list) => list.map((x, j) => (j === i ? { ...x, kind: x.kind === 'interior' ? 'exterior' : 'interior' } : x)))
-                    }>
-                    <Text style={[styles.kindText, p.kind === 'exterior' && styles.kindTextExterior]}>{t(`photo.${p.kind}`)}</Text>
                   </Pressable>
                 </View>
               ))}
@@ -243,7 +248,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  kind: { position: 'absolute', left: 6, bottom: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: colors.overlay },
+  kind: {
+    position: 'absolute',
+    left: 6,
+    bottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.overlay,
+  },
   kindExterior: { backgroundColor: colors.primary },
   kindText: { color: colors.white, fontSize: 11, fontWeight: '700' },
   kindTextExterior: { color: colors.onPrimary },

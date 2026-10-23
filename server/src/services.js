@@ -1,10 +1,10 @@
 import { config } from './config.js';
 import { all, one, run, tx } from './db.js';
-import { APPROX_RADIUS_M, haversineKm, publicDistanceKm } from './geo.js';
+import { haversineKm, publicDistanceKm } from './geo.js';
 import { PHOTO_COLUMNS, photoView } from './images.js';
 import { refundProviderPayment } from './payment-provider.js';
 import { canReview, myReview, propertyReviews } from './reviews.js';
-import { activePassFor, activeUnlock, createPass, grantUnlock, toUnlock, unlockOptions } from './unlocks.js';
+import { PAID, activePassFor, activeUnlock, createPass, grantUnlock, toUnlock, unlockOptions } from './unlocks.js';
 import { HttpError, decryptJson, nowIso, todayIST } from './util.js';
 import { verificationChecks } from './verification.js';
 
@@ -49,14 +49,32 @@ export const bookedPeriods = (propertyId) =>
 
 export const exactLocation = (property) => decryptJson(property.location_enc); // { address, lat, lng }
 
+/**
+ * Whether the user may see the exact address, map pin, owner phone and exterior photos: the owner,
+ * or a tenant with a paid unlock (6 months) or a paid, confirmed booking of this listing.
+ */
 export function hasContactAccess(user, property) {
   if (!user) return false;
   if (property.owner_id === user.id) return true;
-  if (activeUnlock(user.id, property.id)) return true; // unlocks last 6 months
+  if (activeUnlock(user.id, property.id)) return true;
   return Boolean(
-    one("SELECT 1 AS ok FROM bookings WHERE user_id = ? AND property_id = ? AND status = 'CONFIRMED'", user.id, property.id),
+    one(
+      `SELECT 1 AS ok FROM bookings b JOIN payments p ON p.id = b.payment_id
+        WHERE b.user_id = ? AND b.property_id = ? AND b.status = 'CONFIRMED' AND ${PAID('p')}`,
+      user.id,
+      property.id,
+    ),
   );
 }
+
+/**
+ * Exterior photos can show the house itself, so listing and search responses include them only for
+ * the owner. Tenants get them from GET /properties/:id/unlocked after paying.
+ */
+const visiblePhotos = (property, user) => (user?.id === property.owner_id ? '' : " AND kind = 'interior'");
+
+export const exteriorPhotos = (propertyId) =>
+  all(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? AND kind = 'exterior' ORDER BY position`, propertyId).map(photoView);
 
 export function propertyStatus(property) {
   if (property.status === 'withdrawn') return { status: 'WITHDRAWN' };
@@ -70,10 +88,14 @@ export function propertyRating(propertyId) {
   return { average: r.count ? Math.round(r.average * 10) / 10 : null, count: r.count };
 }
 
-/** Public card. Never includes the street address, exact coordinates or owner contact. */
+/** Public card: area names and the fuzzed point only. Never the street address, exact coordinates or owner contact. */
 export function toCard(property, { user, origin } = {}) {
-  const cover = photoView(one(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? ORDER BY position LIMIT 1`, property.id));
-  const { n: photoCount } = one('SELECT COUNT(*) AS n FROM photos WHERE property_id = ?', property.id);
+  const photoFilter = visiblePhotos(property, user);
+  const cover = photoView(
+    one(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ?${photoFilter} ORDER BY position LIMIT 1`, property.id),
+  );
+  const { n: photoCount } = one(`SELECT COUNT(*) AS n FROM photos WHERE property_id = ?${photoFilter}`, property.id);
+  const approxLocation = { lat: property.approx_lat, lng: property.approx_lng, radiusM: property.approx_radius_m };
   const favorite = user
     ? Boolean(one('SELECT 1 AS ok FROM favorites WHERE user_id = ? AND property_id = ?', user.id, property.id))
     : false;
@@ -88,7 +110,7 @@ export function toCard(property, { user, origin } = {}) {
     district: property.district,
     area: property.area,
     landmark: property.landmark,
-    approxLocation: { lat: property.approx_lat, lng: property.approx_lng, radiusM: APPROX_RADIUS_M },
+    approxLocation,
     coverPhoto: cover?.card ?? null, // card-size version — much smaller download than the original
     cover,
     photoCount,
@@ -104,22 +126,28 @@ export function toCard(property, { user, origin } = {}) {
     rating: propertyRating(property.id),
     ...propertyStatus(property),
   };
-  if (origin) card.distanceKm = publicDistanceKm(haversineKm(origin, exactLocation(property)));
+  // Measured to the fuzzed point: rounded distances to the real house could be trilaterated by moving `origin`.
+  if (origin) card.distanceKm = publicDistanceKm(haversineKm(origin, approxLocation));
   return card;
 }
 
+/**
+ * Listing details. Like the card, never includes the address, exact pin, owner contact or (for tenants)
+ * exterior photos — those come only from GET /properties/:id/unlocked.
+ */
 export function toDetail(property, user) {
   const card = toCard(property, { user });
   const detail = {
     ...card,
     description: property.description,
     amenities: JSON.parse(property.amenities),
-    photos: all(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? ORDER BY position`, property.id).map(photoView),
+    photos: all(
+      `SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ?${visiblePhotos(property, user)} ORDER BY position`,
+      property.id,
+    ).map(photoView),
     bookedPeriods: bookedPeriods(property.id),
     unlock: null,
     unlockOptions: unlockOptions(user, property),
-    owner: null,
-    exactLocation: null,
     checks: verificationChecks(property),
     reviews: propertyReviews(property.id),
     myReview: myReview(user, property.id),
@@ -127,10 +155,6 @@ export function toDetail(property, user) {
   };
   const unlock = user && activeUnlock(user.id, property.id);
   if (unlock) detail.unlock = toUnlock(unlock);
-  if (card.unlocked) {
-    detail.owner = ownerContact(property.owner_id);
-    detail.exactLocation = exactLocation(property);
-  }
   return detail;
 }
 

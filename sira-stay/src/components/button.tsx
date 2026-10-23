@@ -33,7 +33,8 @@ export function Button({ title, onPress, variant = 'primary', icon, loading, dis
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ disabled: inactive }}
-      onPress={inactive ? undefined : onPress}
+      disabled={inactive}
+      onPress={onPress}
       style={({ pressed }) => [
         styles.base,
         small && styles.small,

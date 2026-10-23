@@ -36,7 +36,7 @@ import { districtLabel } from '@/lib/districts';
 import { formatDate, formatDateLong, formatPhone, hoursUntil, rupees } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { StringKey } from '@/lib/strings';
-import type { PropertyDetail, Review, VerificationChecks } from '@/lib/types';
+import type { PropertyDetail, Review, UnlockedDetails, VerificationChecks } from '@/lib/types';
 import { useQuery } from '@/lib/use-query';
 
 export default function PropertyScreen() {
@@ -44,6 +44,8 @@ export default function PropertyScreen() {
   const { t, lang, errorText } = useI18n();
   const { user } = useAuth();
   const { data, error, loading, reload, setData, savedAt } = useQuery<{ property: PropertyDetail }>(`/properties/${id}`);
+  // Exact address, owner phone and exterior photos come only from this endpoint, which checks the payment.
+  const unlocked = useQuery<UnlockedDetails>(data?.property.unlocked ? `/properties/${id}/unlocked` : null);
   const startPayment = useStartPayment();
   const [busy, setBusy] = useState<'pay' | 'buyPass' | 'pass' | 'credit' | null>(null);
   const [ownerUnreachable, setOwnerUnreachable] = useState(false);
@@ -118,7 +120,10 @@ export default function PropertyScreen() {
     }
   }
 
-  const owner = p.owner;
+  const owner = unlocked.data?.owner ?? null;
+  const exact = unlocked.data?.location ?? null;
+  // Owners already get every photo with the listing; paying tenants add the exterior ones here.
+  const photos = !p.isOwner && unlocked.data ? [...p.photos, ...unlocked.data.exteriorPhotos] : p.photos;
   const showUnavailable = Boolean(owner && !p.isOwner && (!owner.available || ownerUnreachable));
   const openChat = () => user && router.push(`/chat/${p.id}/${user.id}`);
 
@@ -126,7 +131,7 @@ export default function PropertyScreen() {
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View>
-          <PhotoCarousel photos={p.photos} />
+          <PhotoCarousel photos={photos} />
           {!p.isOwner && (
             <View style={styles.favorite}>
               <FavoriteButton propertyId={p.id} favorite={p.favorite} />
@@ -261,6 +266,19 @@ export default function PropertyScreen() {
                 />
               )}
             </View>
+          ) : p.unlocked ? (
+            // Paid, but the contact hasn't arrived yet — never show the pay-to-unlock card here.
+            <View style={styles.ownerCard}>
+              <Text style={styles.sectionTitle}>{t('prop.ownerContact')}</Text>
+              {unlocked.error ? (
+                <>
+                  <Banner tone="warning">{errorText(unlocked.error)}</Banner>
+                  <Button title={t('common.retry')} variant="outline" small onPress={unlocked.reload} />
+                </>
+              ) : (
+                <ActivityIndicator color={colors.primary} />
+              )}
+            </View>
           ) : (
             <View style={styles.unlockCard}>
               <View style={styles.unlockHeader}>
@@ -363,17 +381,17 @@ export default function PropertyScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('prop.location')}</Text>
           <View style={styles.mapCard}>
-            <ApproxMap approx={p.approxLocation} exact={p.exactLocation} title={p.title} />
+            <ApproxMap approx={p.approxLocation} exact={exact} title={p.title} />
           </View>
-          {p.exactLocation ? (
+          {exact ? (
             <View style={styles.line}>
               <Ionicons name="home-outline" size={16} color={colors.text} />
               <Text style={styles.body}>
-                {t('prop.exactAddress')}: {p.exactLocation.address}
+                {t('prop.exactAddress')}: {exact.address}
               </Text>
             </View>
           ) : (
-            <Text style={styles.hint}>{t('prop.approxNote')}</Text>
+            <Text style={styles.hint}>{t('prop.approxNote', { m: p.approxLocation.radiusM })}</Text>
           )}
         </View>
 

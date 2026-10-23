@@ -7,14 +7,18 @@ import { requireOwner, requireRegistered } from '../auth.js';
 import { config } from '../config.js';
 import { all, one, run, tx } from '../db.js';
 import { canonicalDistrict, districtSpellings } from '../districts.js';
-import { PHOTO_COLUMNS, deletePhotoFiles, photoView, queueVariants } from '../images.js';
-import { approximate, isInIndia } from '../geo.js';
+import { PHOTO_COLUMNS, deletePhotoFiles, photoView, queueVariants, stripPhotoMetadata } from '../images.js';
+import { APPROX_RADIUS_M, fuzzLocation, isInIndia } from '../geo.js';
 import { canReview, parseReview, saveReview } from '../reviews.js';
+import { assertNoLocationLeaks } from '../public-text.js';
 import {
   CATEGORIES,
+  exactLocation,
   expireStaleHolds,
+  exteriorPhotos,
   getPropertyOr404,
   hasContactAccess,
+  ownerContact,
   refundPayment,
   toCard,
   toDetail,
@@ -43,15 +47,6 @@ function parseList(value, field) {
 
 const placeholders = (list) => list.map(() => '?').join(', ');
 
-/** Validates the interior/exterior label sent for each uploaded photo. */
-function photoKinds(value, count) {
-  const kinds = parseList(value, 'photos');
-  if (kinds.length !== count || kinds.some((k) => !['interior', 'exterior'].includes(k))) {
-    throw new HttpError(400, 'VALIDATION', 'Mark every photo as interior or exterior.', { field: 'photos' });
-  }
-  return kinds;
-}
-
 /** Rejects tiny/blurry files and duplicates (within the upload and against `existingHashes`). */
 function checkPhotos(photos, existingHashes = new Set()) {
   const hashes = new Set(existingHashes);
@@ -74,13 +69,28 @@ function checkPhotos(photos, existingHashes = new Set()) {
   });
 }
 
-/** Moves checked uploads into the property's public photo folder. */
-function storePhotoFiles(propertyId, photos, kinds, startPosition) {
+/**
+ * Photos are public, so their metadata goes before they're stored: phone photos can carry the house's
+ * GPS position. Photos that can't be read are rejected rather than published unchecked.
+ */
+async function stripMetadata(photos) {
+  for (const [index, photo] of photos.entries()) {
+    if (!(await stripPhotoMetadata(photo.path))) {
+      throw new HttpError(400, 'PHOTO_UNREADABLE', `Photo ${index + 1} could not be read. Use a JPEG or PNG photo.`, {
+        field: 'photos',
+        index,
+      });
+    }
+  }
+}
+
+/** Moves checked uploads into the property's public photo folder. New photos are indoor only. */
+function storePhotoFiles(propertyId, photos, startPosition) {
   const photoDir = path.join(config.uploadDir, 'photos', propertyId);
   return photos.map((photo, i) => {
     const name = `${String(startPosition + i + 1).padStart(2, '0')}-${photo.sha256.slice(0, 10)}`;
     const dest = moveUpload(photo, photoDir, name, ['image']);
-    return { url: `/uploads/photos/${propertyId}/${path.basename(dest)}`, kind: kinds[i], sha256: photo.sha256 };
+    return { url: `/uploads/photos/${propertyId}/${path.basename(dest)}`, kind: 'interior', sha256: photo.sha256 };
   });
 }
 
@@ -143,6 +153,23 @@ propertiesRouter.get('/:id', (req, res) => {
   res.json({ property: toDetail(getPropertyOr404(req.params.id), req.user) });
 });
 
+/**
+ * The only listing endpoint that reveals the exact address, map pin, owner phone and exterior photos.
+ * Requires a successful payment by this user for this listing (₹29 unlock, District Pass credit or
+ * paid booking); see hasContactAccess. Owners can see their own.
+ */
+propertiesRouter.get('/:id/unlocked', requireRegistered, (req, res) => {
+  const property = getPropertyOr404(req.params.id);
+  if (!hasContactAccess(req.user, property)) throw new HttpError(403, 'LOCKED', 'Unlock owner contact first.');
+  const { address, lat, lng } = exactLocation(property);
+  res.set('Cache-Control', 'private, no-store');
+  res.json({
+    location: { address, lat, lng },
+    owner: ownerContact(property.owner_id),
+    exteriorPhotos: exteriorPhotos(property.id),
+  });
+});
+
 /** Owners who switched from Tenant verify their identity when they start listing. */
 function requireOwnerKyc(req, _res, next) {
   if (req.user.kyc_status === 'none') {
@@ -159,7 +186,7 @@ propertiesRouter.post(
     { name: 'photos', maxCount: MAX_PHOTOS },
     { name: 'document', maxCount: 1 },
   ]),
-  withUploadCleanup((req, res) => {
+  withUploadCleanup(async (req, res) => {
     const b = req.body ?? {};
     if (!CATEGORIES.includes(b.category)) throw new HttpError(400, 'VALIDATION', 'Choose a category.', { field: 'category' });
     const title = requireString(b.title, 'Title', { min: 5, max: 80 });
@@ -181,15 +208,12 @@ propertiesRouter.post(
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || !isInIndia(lat, lng)) {
       throw new HttpError(400, 'LOCATION_REQUIRED', 'Drop a pin on the map to mark the property location.', { field: 'location' });
     }
+    assertNoLocationLeaks({ title, description, district, area, landmark });
 
-    // Photos — minimum 3, maximum 20, clear, no duplicates, interior + exterior.
+    // Photos — minimum 3, maximum 20, clear, no duplicates, indoor only (outside views give the house away).
     const photos = req.files?.photos ?? [];
     if (photos.length < MIN_PHOTOS || photos.length > MAX_PHOTOS) {
       throw new HttpError(400, 'PHOTO_COUNT', `Upload minimum ${MIN_PHOTOS} and maximum ${MAX_PHOTOS} photos.`, { field: 'photos' });
-    }
-    const kinds = photoKinds(b.photoKinds, photos.length);
-    if (!kinds.includes('interior') || !kinds.includes('exterior')) {
-      throw new HttpError(400, 'PHOTO_MIX', 'Add at least one interior and one exterior photo.', { field: 'photos' });
     }
     checkPhotos(photos);
 
@@ -199,18 +223,20 @@ propertiesRouter.post(
     if (!DOC_TYPES.includes(docType) || !document) {
       throw new HttpError(400, 'DOCUMENT_REQUIRED', 'Upload a property document (e.g. tax receipt or EB bill).', { field: 'document' });
     }
+    await stripMetadata(photos);
 
     const id = newId();
-    const approx = approximate(lat, lng, id);
+    // Exact address and pin are stored encrypted; the public point is a random spot within 400 m of the house.
+    const approx = fuzzLocation(lat, lng);
     const docPath = moveUpload(document, path.join(config.privateDir, 'documents'), `${id}-${docType}`, ['image', 'pdf']);
-    const stored = storePhotoFiles(id, photos, kinds, 0);
+    const stored = storePhotoFiles(id, photos, 0);
 
     const photoIds = tx(() => {
       run(
         `INSERT INTO properties (id, owner_id, category, title, description, rent, deposit, booking_amount, furnishing,
-           amenities, district, area, landmark, location_enc, approx_lat, approx_lng, doc_type, doc_file, verification,
-           available_from, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           amenities, district, area, landmark, location_enc, approx_lat, approx_lng, approx_radius_m, doc_type, doc_file,
+           verification, available_from, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id,
         req.user.id,
         b.category,
@@ -227,6 +253,7 @@ propertiesRouter.post(
         encryptJson({ address, lat, lng }),
         approx.lat,
         approx.lng,
+        APPROX_RADIUS_M,
         docType,
         path.basename(docPath),
         req.user.kyc_status === 'verified' ? 'verified' : 'pending',
@@ -256,7 +283,7 @@ propertiesRouter.post(
   '/:id/photos',
   requireOwner,
   upload.array('photos', MAX_PHOTOS),
-  withUploadCleanup((req, res) => {
+  withUploadCleanup(async (req, res) => {
     const property = ownProperty(req);
     const photos = req.files ?? [];
     const existing = all('SELECT sha256, position FROM photos WHERE property_id = ?', property.id);
@@ -269,28 +296,25 @@ propertiesRouter.post(
         { field: 'photos' },
       );
     }
-    const kinds = photoKinds(req.body?.photoKinds, photos.length);
     checkPhotos(photos, new Set(existing.map((p) => p.sha256).filter(Boolean)));
+    await stripMetadata(photos);
 
     const start = existing.reduce((max, p) => Math.max(max, p.position + 1), 0);
-    const stored = storePhotoFiles(property.id, photos, kinds, start);
+    const stored = storePhotoFiles(property.id, photos, start);
     queueVariants(tx(() => insertPhotos(property.id, stored, start)));
     res.status(201).json({ photos: listPhotos(property.id) });
   }),
 );
 
-/** Removes a photo, keeping at least 3 with both an interior and an exterior view. */
+/** Removes a photo. Exterior photos can always go; at least 3 indoor photos (the public ones) must stay. */
 propertiesRouter.delete('/:id/photos/:photoId', requireOwner, (req, res) => {
   const property = ownProperty(req);
   const photos = all(`SELECT ${PHOTO_COLUMNS} FROM photos WHERE property_id = ? ORDER BY position`, property.id);
   const target = photos.find((p) => p.id === req.params.photoId);
   if (!target) throw new HttpError(404, 'NOT_FOUND', 'Photo not found.');
   const remaining = photos.filter((p) => p.id !== target.id);
-  if (remaining.length < MIN_PHOTOS) {
-    throw new HttpError(400, 'PHOTO_COUNT', `Keep at least ${MIN_PHOTOS} photos on a listing.`, { field: 'photos' });
-  }
-  if (!remaining.some((p) => p.kind === 'interior') || !remaining.some((p) => p.kind === 'exterior')) {
-    throw new HttpError(400, 'PHOTO_MIX', 'Keep at least one interior and one exterior photo.', { field: 'photos' });
+  if (target.kind === 'interior' && remaining.filter((p) => p.kind === 'interior').length < MIN_PHOTOS) {
+    throw new HttpError(400, 'PHOTO_COUNT', `Keep at least ${MIN_PHOTOS} indoor photos on a listing.`, { field: 'photos' });
   }
   tx(() => {
     run('DELETE FROM photos WHERE id = ?', target.id);

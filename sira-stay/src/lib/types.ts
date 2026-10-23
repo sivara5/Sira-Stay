@@ -93,13 +93,21 @@ export type PropertyDetail = PropertyCard & {
   unlockFee: number;
   unlock: Unlock | null;
   unlockOptions: UnlockOptions;
-  owner: OwnerContact | null;
-  exactLocation: (LatLng & { address: string }) | null;
   checks: VerificationChecks;
   reviews: Review[];
   myReview: MyReview | null;
   /** True when the viewer unlocked the owner's contact (or booked) and may write a review. */
   canReview: boolean;
+};
+
+/**
+ * From GET /properties/:id/unlocked — the only place the exact address, pin, owner phone and
+ * exterior photos come from. The server returns it only after this user paid to unlock (or booked).
+ */
+export type UnlockedDetails = {
+  location: LatLng & { address: string };
+  owner: OwnerContact;
+  exteriorPhotos: PhotoView[];
 };
 
 export type VerificationChecks = { ownerKyc: boolean; adminVerified: boolean; documentChecked: boolean };

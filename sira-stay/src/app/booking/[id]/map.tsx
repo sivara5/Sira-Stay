@@ -1,10 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AreaCircle } from '@/components/approx-map';
+import { AreaCircle, AreaTag } from '@/components/approx-map';
 import { Button } from '@/components/button';
 import { ErrorView, Loading } from '@/components/feedback';
 import { darkMapProps } from '@/constants/map-style';
@@ -37,14 +37,14 @@ export default function BookingMap() {
         initialRegion={{ latitude: approx.lat, longitude: approx.lng, latitudeDelta: 0.04, longitudeDelta: 0.04 }}
         toolbarEnabled={false}>
         <AreaCircle approx={approx} />
-        <Marker coordinate={{ latitude: approx.lat, longitude: approx.lng }} title={property.title} description={property.area} tracksViewChanges={false}>
+        <AreaTag approx={approx}>
           <View style={styles.pin}>
             <Ionicons name="home" size={14} color={colors.onPrimary} />
             <Text style={styles.pinText} numberOfLines={1}>
               {property.area}
             </Text>
           </View>
-        </Marker>
+        </AreaTag>
       </MapView>
 
       <SafeAreaView edges={['bottom']} style={styles.sheet}>

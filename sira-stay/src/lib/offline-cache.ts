@@ -1,15 +1,23 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
- * Last-seen copies of screens so they still show offline: property lists, viewed property details,
- * Favorites, My Bookings and booking details. Stored per user and cleared on sign-out.
+ * Last-seen copies of screens so they still show offline: property lists, viewed property details
+ * (with the owner contact a tenant paid for), Favorites, My Bookings and booking details.
+ * Stored per user and cleared on sign-out.
  */
 const PREFIX = 'sira.cache.v1:';
 const INDEX_KEY = 'sira.cache.v1.index';
 const MAX_ENTRIES = 60;
 const MAX_AGE_MS = 30 * 24 * 3_600_000;
 
-const CACHEABLE = [/^\/properties\?/, /^\/properties\/[^/?]+$/, /^\/my\/favorites$/, /^\/my\/bookings$/, /^\/bookings\/[^/?]+$/];
+const CACHEABLE = [
+  /^\/properties\?/,
+  /^\/properties\/[^/?]+$/,
+  /^\/properties\/[^/?]+\/unlocked$/,
+  /^\/my\/favorites$/,
+  /^\/my\/bookings$/,
+  /^\/bookings\/[^/?]+$/,
+];
 export const isCacheable = (path: string) => CACHEABLE.some((pattern) => pattern.test(path));
 
 let owner = 'guest';
