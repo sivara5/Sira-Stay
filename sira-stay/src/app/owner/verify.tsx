@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Banner } from '@/components/feedback';
+import { KeyboardAvoidingContainer, KeyboardAwareScrollView } from '@/components/keyboard-aware-scroll-view';
 import { useKycForm } from '@/components/kyc-form';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
@@ -23,18 +24,18 @@ export default function OwnerVerify() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingContainer style={styles.flex}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>{t('owner.verifyTitle')}</Text>
           <Banner tone="info" icon="shield-checkmark-outline">
             {t('owner.verifyHint')}
           </Banner>
           {kyc.fields}
-        </ScrollView>
+        </KeyboardAwareScrollView>
         <View style={styles.footer}>
           <Button title={t('common.continue')} icon="arrow-forward" onPress={kyc.submit} loading={kyc.loading} />
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingContainer>
     </SafeAreaView>
   );
 }

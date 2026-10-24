@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { KeyboardAvoidingContainer, KeyboardAwareScrollView } from '@/components/keyboard-aware-scroll-view';
 import { colors } from '@/constants/theme';
 import { useI18n } from '@/lib/i18n';
 
@@ -17,8 +18,9 @@ export function OnboardingScreen({ title, subtitle, step, children, footer }: Pr
   const { t } = useI18n();
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {/* The footer button rises above the keyboard; a focused box scrolls into view above it. */}
+      <KeyboardAvoidingContainer style={styles.flex}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.content}>
           {step && (
             <View style={styles.stepRow}>
               {Array.from({ length: step.total }, (_, i) => (
@@ -30,9 +32,9 @@ export function OnboardingScreen({ title, subtitle, step, children, footer }: Pr
           <Text style={styles.title}>{title}</Text>
           {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
           <View style={styles.body}>{children}</View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
         {footer && <View style={styles.footer}>{footer}</View>}
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingContainer>
     </SafeAreaView>
   );
 }

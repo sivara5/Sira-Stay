@@ -1,12 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
 import { Chip } from '@/components/chip';
 import { Banner } from '@/components/feedback';
+import { KeyboardAvoidingContainer, KeyboardAwareScrollView } from '@/components/keyboard-aware-scroll-view';
 import { TextField } from '@/components/text-field';
 import { colors, radius } from '@/constants/theme';
 import { api } from '@/lib/api';
@@ -64,48 +65,51 @@ export default function ReportWrongDetails() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.hint}>{t('report.hint')}</Text>
-        <Banner tone="warning" icon="information-circle-outline">
-          {t('report.limitNote', { n: REPORTS_PER_MONTH })}
-        </Banner>
-
-        <Text style={styles.label}>{t('report.reason')}</Text>
-        <View style={styles.chips}>
-          {REASONS.map((r) => (
-            <Chip key={r} label={t(`reason.${r}`)} selected={reason === r} onPress={() => setReason(r)} />
-          ))}
-        </View>
-        <TextField label={t('report.note')} value={note} onChangeText={setNote} multiline maxLength={300} />
-
-        {paid ? (
-          <>
-            <Text style={styles.label}>{t('report.choose')}</Text>
-            <Option
-              selected={resolution === 'refund'}
-              icon="cash-outline"
-              title={t('report.refund', { price: rupees(Number(price)) })}
-              hint={t('report.refundHint')}
-              onPress={() => setResolution('refund')}
-            />
-            <Option
-              selected={resolution === 'credit'}
-              icon="gift-outline"
-              title={t('report.credit')}
-              hint={t('report.creditHint')}
-              onPress={() => setResolution('credit')}
-            />
-          </>
-        ) : (
-          <Banner tone="info" icon="ticket-outline">
-            {method === 'pass' ? t('report.passNote') : t('report.creditNote')}
+      {/* Submit rises above the keyboard; the note box scrolls into view above it. */}
+      <KeyboardAvoidingContainer style={styles.flex}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.hint}>{t('report.hint')}</Text>
+          <Banner tone="warning" icon="information-circle-outline">
+            {t('report.limitNote', { n: REPORTS_PER_MONTH })}
           </Banner>
-        )}
-        {error && <Banner tone="danger">{error}</Banner>}
-      </ScrollView>
-      <View style={styles.footer}>
-        <Button title={t('report.submit')} icon="flag" onPress={submit} loading={submitting} disabled={!reason} />
-      </View>
+
+          <Text style={styles.label}>{t('report.reason')}</Text>
+          <View style={styles.chips}>
+            {REASONS.map((r) => (
+              <Chip key={r} label={t(`reason.${r}`)} selected={reason === r} onPress={() => setReason(r)} />
+            ))}
+          </View>
+          <TextField label={t('report.note')} value={note} onChangeText={setNote} multiline maxLength={300} />
+
+          {paid ? (
+            <>
+              <Text style={styles.label}>{t('report.choose')}</Text>
+              <Option
+                selected={resolution === 'refund'}
+                icon="cash-outline"
+                title={t('report.refund', { price: rupees(Number(price)) })}
+                hint={t('report.refundHint')}
+                onPress={() => setResolution('refund')}
+              />
+              <Option
+                selected={resolution === 'credit'}
+                icon="gift-outline"
+                title={t('report.credit')}
+                hint={t('report.creditHint')}
+                onPress={() => setResolution('credit')}
+              />
+            </>
+          ) : (
+            <Banner tone="info" icon="ticket-outline">
+              {method === 'pass' ? t('report.passNote') : t('report.creditNote')}
+            </Banner>
+          )}
+          {error && <Banner tone="danger">{error}</Banner>}
+        </KeyboardAwareScrollView>
+        <View style={styles.footer}>
+          <Button title={t('report.submit')} icon="flag" onPress={submit} loading={submitting} disabled={!reason} />
+        </View>
+      </KeyboardAvoidingContainer>
     </SafeAreaView>
   );
 }

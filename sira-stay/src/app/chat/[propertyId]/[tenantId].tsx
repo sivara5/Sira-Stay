@@ -1,10 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Banner, ErrorView, Loading } from '@/components/feedback';
+import { KeyboardAvoidingContainer } from '@/components/keyboard-aware-scroll-view';
 import { colors, radius } from '@/constants/theme';
 import { api } from '@/lib/api';
 import { formatTime } from '@/lib/format';
@@ -46,7 +47,8 @@ export default function Chat() {
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <Stack.Screen options={{ title: data.otherName }} />
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
+      {/* The message box rises above the keyboard, and the list shrinks to the space left. */}
+      <KeyboardAvoidingContainer style={styles.flex}>
         <View style={styles.propertyBar}>
           <Ionicons name="home-outline" size={14} color={colors.primary} />
           <Text style={styles.propertyText} numberOfLines={1}>
@@ -66,6 +68,8 @@ export default function Chat() {
           keyExtractor={(m) => m.id}
           contentContainerStyle={styles.messages}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          // Keep the latest messages in view when the keyboard opens and the list gets shorter.
+          onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
           renderItem={({ item: m }) =>
             m.system ? (
               <View style={styles.system}>
@@ -103,7 +107,7 @@ export default function Chat() {
             <Ionicons name="send" size={18} color={colors.onPrimary} />
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingContainer>
     </SafeAreaView>
   );
 }

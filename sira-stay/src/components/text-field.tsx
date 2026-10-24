@@ -1,12 +1,15 @@
 import { StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 
+import { useKeepAboveKeyboard } from '@/components/keyboard-aware-scroll-view';
 import { colors, radius } from '@/constants/theme';
 
 type Props = TextInputProps & { label?: string; hint?: string; error?: string | null; prefix?: string };
 
-export function TextField({ label, hint, error, prefix, style, multiline, ...rest }: Props) {
+/** Labelled text box. Inside a KeyboardAwareScrollView it scrolls above the keyboard when focused. */
+export function TextField({ label, hint, error, prefix, style, multiline, onFocus, onBlur, ...rest }: Props) {
+  const { blockRef, onFocus: keepAbove, onBlur: release } = useKeepAboveKeyboard();
   return (
-    <View style={styles.wrap}>
+    <View ref={blockRef} style={styles.wrap}>
       {label && <Text style={styles.label}>{label}</Text>}
       <View style={[styles.inputRow, multiline && styles.multilineRow, error ? styles.inputError : null]}>
         {prefix && <Text style={styles.prefix}>{prefix}</Text>}
@@ -17,6 +20,14 @@ export function TextField({ label, hint, error, prefix, style, multiline, ...res
           style={[styles.input, multiline && styles.multiline, style]}
           multiline={multiline}
           {...rest}
+          onFocus={(e) => {
+            keepAbove();
+            onFocus?.(e); // after, so a caller can keep a bigger block in view
+          }}
+          onBlur={(e) => {
+            release();
+            onBlur?.(e);
+          }}
         />
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : hint ? <Text style={styles.hint}>{hint}</Text> : null}
@@ -26,9 +37,12 @@ export function TextField({ label, hint, error, prefix, style, multiline, ...res
 
 /** Single input for 6-digit codes; supports SMS autofill on Android and iOS. */
 export function OtpField({ value, onChangeText, error }: { value: string; onChangeText: (v: string) => void; error?: string | null }) {
+  const { blockRef, onFocus, onBlur } = useKeepAboveKeyboard();
   return (
-    <View style={styles.wrap}>
+    <View ref={blockRef} style={styles.wrap}>
       <TextInput
+        onFocus={onFocus}
+        onBlur={onBlur}
         value={value}
         onChangeText={(v) => onChangeText(v.replace(/\D/g, '').slice(0, 6))}
         keyboardType="number-pad"

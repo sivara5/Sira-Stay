@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import * as Location from 'expo-location';
 import { Redirect, router } from 'expo-router';
 import { useRef, useState, type ReactNode } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import MapView, { Marker, type LatLng } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -13,6 +13,7 @@ import { categoryIcon } from '@/components/category-tabs';
 import { Chip } from '@/components/chip';
 import { DateField } from '@/components/date-field';
 import { Banner } from '@/components/feedback';
+import { KeyboardAvoidingContainer, KeyboardAwareScrollView } from '@/components/keyboard-aware-scroll-view';
 import { LeakBanner, useLeakText } from '@/components/leak-warning';
 import { TextField } from '@/components/text-field';
 import { darkMapProps } from '@/constants/map-style';
@@ -217,8 +218,9 @@ export default function NewListing() {
         ))}
       </View>
 
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {/* Back / Next / Publish rise above the keyboard; the focused box scrolls into view above them. */}
+      <KeyboardAvoidingContainer style={styles.flex}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.content}>
           {step === 0 && (
             <>
               <Group label={t('new.category')}>
@@ -424,17 +426,19 @@ export default function NewListing() {
           )}
 
           {errors.form && <Banner tone="danger">{errors.form}</Banner>}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
 
-      <View style={styles.footer}>
-        {step > 0 && <Button title={t('common.back')} variant="outline" style={styles.flex} onPress={() => setStep(step - 1)} disabled={submitting} />}
-        {step < STEPS.length - 1 ? (
-          <Button title={t('common.next')} icon="arrow-forward" style={styles.flex} onPress={next} />
-        ) : (
-          <Button title={t('new.publish')} icon="checkmark-done" style={styles.flex} onPress={publish} loading={submitting} />
-        )}
-      </View>
+        <View style={styles.footer}>
+          {step > 0 && (
+            <Button title={t('common.back')} variant="outline" style={styles.flex} onPress={() => setStep(step - 1)} disabled={submitting} />
+          )}
+          {step < STEPS.length - 1 ? (
+            <Button title={t('common.next')} icon="arrow-forward" style={styles.flex} onPress={next} />
+          ) : (
+            <Button title={t('new.publish')} icon="checkmark-done" style={styles.flex} onPress={publish} loading={submitting} />
+          )}
+        </View>
+      </KeyboardAvoidingContainer>
     </SafeAreaView>
   );
 }

@@ -1,78 +1,146 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type RefObject } from 'react';
-import { Keyboard, ScrollView, View, type ScrollViewProps } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { Keyboard, LayoutAnimation, Platform, ScrollView, View, type KeyboardEvent, type ScrollViewProps, type StyleProp, type ViewStyle } from 'react-native';
+
+/*
+ * The app draws edge-to-edge, so on Android the keyboard covers the screen instead of resizing it, and
+ * React Native's KeyboardAvoidingView (left off on Android here) can't be relied on. Two pieces fix that,
+ * both measuring in window coordinates so headers need no offsets:
+ * - KeyboardAvoidingContainer lifts what's pinned at its bottom (a footer button, a chat composer).
+ * - KeyboardAwareScrollView scrolls the focused text box — every TextField registers itself, and
+ *   useKeepAboveKeyboard can widen that to a block such as a comment box with its Submit button.
+ */
 
 /** Gap kept between a revealed block and the keyboard (and the top of the scroll view). */
 const MARGIN = 12;
 
+/** How much of a view the keyboard covers: from the keyboard's top edge down to the view's bottom edge. */
+export const keyboardOverlap = (viewBottom: number, keyboardTop: number) => Math.max(0, Math.round(viewBottom - keyboardTop));
+
 /**
- * How far to scroll down so a block sits above the keyboard (all values in window coordinates). When the
- * block is taller than the space left, its top stays in view instead, so a text box never goes off-screen.
+ * How far to scroll down so a block sits inside the visible part of a scroll view (all values in window
+ * coordinates). When the block is taller than that space, its top stays in view instead, so a text box
+ * never goes off-screen.
  */
 export function scrollToReveal({
   blockTop,
   blockBottom,
   visibleTop,
-  keyboardTop,
+  visibleBottom,
 }: {
   blockTop: number;
   blockBottom: number;
   visibleTop: number;
-  keyboardTop: number;
+  visibleBottom: number;
 }) {
-  const covered = blockBottom + MARGIN - keyboardTop;
+  const covered = blockBottom + MARGIN - visibleBottom;
   const roomAbove = blockTop - MARGIN - visibleTop;
   return Math.max(0, Math.min(covered, roomAbove));
 }
 
-type Block = RefObject<View | null>;
-const RevealContext = createContext<((block: Block | null) => void) | null>(null);
+// iOS announces the keyboard before it moves, so the layout can animate along; Android only afterwards.
+const WILL_SHOW = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+const WILL_HIDE = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+function moveWithKeyboard(e: KeyboardEvent) {
+  if (Platform.OS === 'ios' && e.duration) {
+    LayoutAnimation.configureNext({ duration: e.duration, update: { duration: e.duration, type: LayoutAnimation.Types.keyboard } });
+  }
+}
 
 /**
- * ScrollView whose text boxes stay usable above the keyboard. The app draws edge-to-edge, so on Android
- * the keyboard covers the screen instead of resizing it: while the keyboard is up this adds room below
- * the content, and scrolls the focused block (see useKeepAboveKeyboard) into view — again whenever the
- * content changes size, e.g. the text box grows or a warning appears.
+ * Keeps the bottom of its content — a footer button, a chat composer — above the keyboard by padding its
+ * bottom by however much the keyboard covers it.
  */
-export function KeyboardAwareScrollView({ children, onScroll, onContentSizeChange, ...props }: ScrollViewProps) {
-  const scrollRef = useRef<ScrollView>(null);
-  const offset = useRef(0);
-  const active = useRef<Block | null>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const insets = useSafeAreaInsets();
+export function KeyboardAvoidingContainer({ style, children }: { style?: StyleProp<ViewStyle>; children: ReactNode }) {
+  const ref = useRef<View>(null);
+  const [inset, setInset] = useState(0);
 
   useEffect(() => {
-    const shown = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
-    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    const shown = Keyboard.addListener(WILL_SHOW, (e) => {
+      ref.current?.measureInWindow((_x, y, _w, height) => {
+        moveWithKeyboard(e);
+        setInset(keyboardOverlap(y + height, e.endCoordinates.screenY));
+      });
+    });
+    const hidden = Keyboard.addListener(WILL_HIDE, (e) => {
+      moveWithKeyboard(e);
+      setInset(0);
+    });
     return () => {
       shown.remove();
       hidden.remove();
     };
   }, []);
 
-  const reveal = useCallback(() => {
-    const block = active.current?.current;
+  return (
+    <View ref={ref} style={[style, inset > 0 && { paddingBottom: inset }]}>
+      {children}
+    </View>
+  );
+}
+
+type Block = RefObject<View | null>;
+type Blocks = { focus: (block: Block) => void; blur: (block: Block) => void };
+const BlocksContext = createContext<Blocks | null>(null);
+
+/**
+ * ScrollView whose text boxes stay usable above the keyboard: it adds room below the content for however
+ * much the keyboard covers it (none inside a KeyboardAvoidingContainer that already lifted it), and
+ * scrolls the focused block into view — again whenever the layout changes, e.g. a box grows or a warning
+ * appears.
+ */
+export function KeyboardAwareScrollView({ children, onScroll, onContentSizeChange, onLayout, ...props }: ScrollViewProps) {
+  const scrollRef = useRef<ScrollView>(null);
+  const offset = useRef(0);
+  const active = useRef<Block | null>(null);
+  const [space, setSpace] = useState(0);
+
+  const update = useCallback(() => {
     const keyboard = Keyboard.metrics();
     const scroll = scrollRef.current;
-    if (!block || !keyboard || !scroll) return;
-    scroll.getNativeScrollRef()?.measureInWindow((_sx, visibleTop) => {
-      block.measureInWindow((_x, blockTop, _w, height) => {
-        const by = scrollToReveal({ blockTop, blockBottom: blockTop + height, visibleTop, keyboardTop: keyboard.screenY });
+    if (!keyboard || !scroll) {
+      setSpace(0);
+      return;
+    }
+    scroll.getNativeScrollRef()?.measureInWindow((_sx, top, _sw, height) => {
+      setSpace(keyboardOverlap(top + height, keyboard.screenY));
+      active.current?.current?.measureInWindow((_x, blockTop, _w, blockHeight) => {
+        const by = scrollToReveal({
+          blockTop,
+          blockBottom: blockTop + blockHeight,
+          visibleTop: top,
+          visibleBottom: Math.min(keyboard.screenY, top + height),
+        });
         if (by > 0) scroll.scrollTo({ y: offset.current + by, animated: true });
       });
     });
   }, []);
 
-  const setActive = useCallback(
-    (block: Block | null) => {
-      active.current = block;
-      reveal(); // no-op until the keyboard is up; then the keyboard's own events take over
-    },
-    [reveal],
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', update);
+    const hidden = Keyboard.addListener('keyboardDidHide', update);
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, [update]);
+
+  const blocks = useMemo<Blocks>(
+    () => ({
+      focus: (block) => {
+        active.current = block;
+        update();
+      },
+      // Focus can move to the next box before the previous one reports its blur.
+      blur: (block) => {
+        if (active.current === block) active.current = null;
+      },
+    }),
+    [update],
   );
 
   return (
-    <RevealContext.Provider value={setActive}>
+    <BlocksContext.Provider value={blocks}>
       <ScrollView
         ref={scrollRef}
         keyboardShouldPersistTaps="handled"
@@ -82,26 +150,30 @@ export function KeyboardAwareScrollView({ children, onScroll, onContentSizeChang
           offset.current = e.nativeEvent.contentOffset.y;
           onScroll?.(e);
         }}
+        onLayout={(e) => {
+          update();
+          onLayout?.(e);
+        }}
         onContentSizeChange={(width, height) => {
-          reveal();
+          update();
           onContentSizeChange?.(width, height);
         }}>
         {children}
-        {keyboardHeight > 0 && <View testID="keyboard-space" style={{ height: keyboardHeight + insets.bottom }} />}
+        {space > 0 && <View testID="keyboard-space" style={{ height: space }} />}
       </ScrollView>
-    </RevealContext.Provider>
+    </BlocksContext.Provider>
   );
 }
 
 /**
- * Keeps a block — a text box plus what belongs with it, like its warnings and Submit button — above the
- * keyboard while the text box is focused. Put `blockRef` on the block's View and `onFocus`/`onBlur` on the
- * text box. Does nothing outside a KeyboardAwareScrollView.
+ * Keeps a block above the keyboard while its text box is focused, inside a KeyboardAwareScrollView (does
+ * nothing elsewhere). Put `blockRef` on the block's View and `onFocus`/`onBlur` on the text box. TextField
+ * does this for itself; use it directly to keep more in view, like a comment box and its Submit button.
  */
 export function useKeepAboveKeyboard() {
-  const setActive = useContext(RevealContext);
+  const blocks = useContext(BlocksContext);
   const blockRef = useRef<View>(null);
-  const onFocus = useCallback(() => setActive?.(blockRef), [setActive]);
-  const onBlur = useCallback(() => setActive?.(null), [setActive]);
+  const onFocus = useCallback(() => blocks?.focus(blockRef), [blocks]);
+  const onBlur = useCallback(() => blocks?.blur(blockRef), [blocks]);
   return { blockRef, onFocus, onBlur };
 }
